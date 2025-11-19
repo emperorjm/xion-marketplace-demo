@@ -61,7 +61,6 @@ export default function App() {
     const [account] = await wallet.getAccounts();
     const client = await SigningCosmWasmClient.connectWithSigner(config.rpcEndpoint, wallet, {
       gasPrice: GasPrice.fromString(config.gasPrice),
-      prefix: config.prefix,
     });
     return { client, ownerAddress: account.address };
   }, [config.gasPrice, config.prefix, config.rpcEndpoint]);
@@ -78,7 +77,6 @@ export default function App() {
       const [account] = await wallet.getAccounts();
       const client = await SigningCosmWasmClient.connectWithSigner(config.rpcEndpoint, wallet, {
         gasPrice: GasPrice.fromString(config.gasPrice),
-        prefix: config.prefix,
       });
       return { client, address: account.address };
     },

@@ -1,0 +1,940 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { DirectSecp256k1HdWallet } from '@cosmjs/proto-signing';
+import { SigningCosmWasmClient } from '@cosmjs/cosmwasm-stargate';
+import { GasPrice } from '@cosmjs/stargate';
+import { useCosmos } from './hooks/useCosmos';
+import { ConfigPanel } from './components/ConfigPanel';
+import { WalletPanel } from './components/WalletPanel';
+import { AssetGallery } from './components/AssetGallery';
+import { BalanceMonitor } from './components/BalanceMonitor';
+import { PluginManager } from './components/PluginManager';
+import { PluginViewer } from './components/PluginViewer';
+import { QueryPanel } from './components/QueryPanel';
+import { ExecutionLog } from './components/ExecutionLog';
+import { ActionSection } from './components/sections/ActionSection';
+import { buildCoin, parseExpiration, parseOptionalString, safeJsonParse, randomId, } from './lib/helpers';
+const DEFAULT_USER_MNEMONIC = 'hidden candy lecture little retreat supreme immense fix path absurd dilemma jar rally express click weird near drop uncover plunge flush scan ship plastic';
+const MARKETPLACE_OWNER_MNEMONIC = 'dad injury share hurry planet comfort rapid limb kind other region stumble guide error skill cigar key payment version bless vapor empty acquire peanut';
+export default function App() {
+    const { config, execute, instantiate, isConnected, updateConfig } = useCosmos();
+    const [marketplaceOwnerAddress, setMarketplaceOwnerAddress] = useState('');
+    const [logs, setLogs] = useState([]);
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const wallet = await DirectSecp256k1HdWallet.fromMnemonic(MARKETPLACE_OWNER_MNEMONIC, {
+                    prefix: config.prefix,
+                });
+                const [account] = await wallet.getAccounts();
+                if (!cancelled) {
+                    setMarketplaceOwnerAddress(account.address);
+                }
+            }
+            catch (err) {
+                console.error('Failed to derive marketplace owner address', err);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [config.prefix]);
+    const createMarketplaceOwnerClient = useCallback(async () => {
+        if (!config.rpcEndpoint) {
+            throw new Error('RPC endpoint is required');
+        }
+        const wallet = await DirectSecp256k1HdWallet.fromMnemonic(MARKETPLACE_OWNER_MNEMONIC, {
+            prefix: config.prefix,
+        });
+        const [account] = await wallet.getAccounts();
+        const client = await SigningCosmWasmClient.connectWithSigner(config.rpcEndpoint, wallet, {
+            gasPrice: GasPrice.fromString(config.gasPrice),
+        });
+        return { client, ownerAddress: account.address };
+    }, [config.gasPrice, config.prefix, config.rpcEndpoint]);
+    const createCustomAssetClient = useCallback(async (mnemonic) => {
+        if (!config.rpcEndpoint) {
+            throw new Error('RPC endpoint is required');
+        }
+        const phrase = mnemonic && mnemonic.trim().length ? mnemonic.trim() : DEFAULT_USER_MNEMONIC;
+        const wallet = await DirectSecp256k1HdWallet.fromMnemonic(phrase, {
+            prefix: config.prefix,
+        });
+        const [account] = await wallet.getAccounts();
+        const client = await SigningCosmWasmClient.connectWithSigner(config.rpcEndpoint, wallet, {
+            gasPrice: GasPrice.fromString(config.gasPrice),
+        });
+        return { client, address: account.address };
+    }, [config.gasPrice, config.prefix, config.rpcEndpoint]);
+    const addLog = useCallback((entry) => {
+        const next = {
+            id: entry.id ?? randomId(),
+            timestamp: entry.timestamp ?? new Date().toISOString(),
+            ...entry,
+        };
+        setLogs((prev) => [next, ...prev].slice(0, 50));
+    }, []);
+    const runWithLog = useCallback(async (title, executor) => {
+        try {
+            const result = await executor();
+            addLog({
+                title,
+                status: 'success',
+                detail: result.detail ?? 'Success',
+                txHash: result.txHash,
+            });
+            return { txHash: result.txHash, message: result.detail };
+        }
+        catch (err) {
+            addLog({
+                title,
+                status: 'error',
+                detail: err instanceof Error ? err.message : 'Action failed',
+            });
+            throw err;
+        }
+    }, [addLog]);
+    const assetContractMissing = !config.assetContract;
+    const marketplaceMissing = !config.marketplaceContract;
+    const ownerClientUnavailable = !config.rpcEndpoint;
+    const instantiationActions = useMemo(() => [
+        {
+            key: 'instantiate-asset',
+            title: 'Instantiate Asset Contract',
+            description: 'Deploys the asset (cw721-based) contract',
+            fields: [
+                { name: 'codeId', label: 'Asset Code ID', type: 'number' },
+                { name: 'label', label: 'Instantiate Label', type: 'text' },
+                { name: 'admin', label: 'Admin Address (optional)', type: 'text', required: false },
+                { name: 'name', label: 'Collection Name', type: 'text' },
+                { name: 'symbol', label: 'Collection Symbol', type: 'text' },
+                { name: 'minter', label: 'Minter Address', type: 'text', required: false },
+                { name: 'creator', label: 'Creator Address', type: 'text', required: false },
+                {
+                    name: 'withdrawAddress',
+                    label: 'Withdraw Address',
+                    type: 'text',
+                    required: false,
+                },
+                {
+                    name: 'collectionInfoExtension',
+                    label: 'Collection Info Extension JSON',
+                    type: 'textarea',
+                    defaultValue: '{}',
+                    required: false,
+                },
+                {
+                    name: 'useAsAsset',
+                    label: 'Use this address in the config panel',
+                    type: 'checkbox',
+                    defaultValue: true,
+                    required: false,
+                },
+            ],
+            disabled: !isConnected,
+            disabledReason: 'Connect your wallet to instantiate contracts',
+            onSubmit: (values) => runWithLog('Instantiate Asset', async () => {
+                const codeId = Number(values.codeId);
+                if (!Number.isInteger(codeId)) {
+                    throw new Error('Code ID must be an integer');
+                }
+                if (!values.label) {
+                    throw new Error('Label is required');
+                }
+                const msg = {
+                    name: values.name,
+                    symbol: values.symbol,
+                    collection_info_extension: safeJsonParse(values.collectionInfoExtension, {}),
+                    minter: parseOptionalString(values.minter),
+                    creator: parseOptionalString(values.creator),
+                    withdraw_address: parseOptionalString(values.withdrawAddress),
+                };
+                const admin = parseOptionalString(values.admin);
+                const result = await instantiate(codeId, msg, values.label, { admin });
+                if (values.useAsAsset) {
+                    updateConfig({ assetContract: result.contractAddress });
+                }
+                return {
+                    txHash: result.transactionHash,
+                    detail: `Asset contract at ${result.contractAddress}`,
+                };
+            }),
+        },
+        {
+            key: 'instantiate-marketplace',
+            title: 'Instantiate Marketplace Contract',
+            description: `Deploys the marketplace contract (manager fixed to ${marketplaceOwnerAddress || 'derived owner'})`,
+            fields: [
+                { name: 'codeId', label: 'Marketplace Code ID', type: 'number' },
+                { name: 'label', label: 'Instantiate Label', type: 'text' },
+                { name: 'admin', label: 'Admin Address (optional)', type: 'text', required: false },
+                {
+                    name: 'feeRecipient',
+                    label: 'Fee Recipient',
+                    type: 'text',
+                    placeholder: 'xion1...',
+                },
+                {
+                    name: 'feeBps',
+                    label: 'Fee BPS',
+                    type: 'number',
+                    defaultValue: '200',
+                },
+                {
+                    name: 'saleApprovals',
+                    label: 'Require Sale Approvals',
+                    type: 'select',
+                    defaultValue: 'false',
+                    options: [
+                        { label: 'Disabled', value: 'false' },
+                        { label: 'Enabled', value: 'true' },
+                    ],
+                },
+                {
+                    name: 'listingDenom',
+                    label: 'Listing Denom',
+                    type: 'text',
+                    defaultValue: config.defaultDenom,
+                },
+                {
+                    name: 'useAsMarketplace',
+                    label: 'Use this address in the config panel',
+                    type: 'checkbox',
+                    defaultValue: true,
+                    required: false,
+                },
+            ],
+            disabled: ownerClientUnavailable,
+            disabledReason: ownerClientUnavailable ? 'Set the RPC endpoint first' : undefined,
+            onSubmit: (values) => runWithLog('Instantiate Marketplace', async () => {
+                const codeId = Number(values.codeId);
+                if (!Number.isInteger(codeId)) {
+                    throw new Error('Code ID must be an integer');
+                }
+                if (!values.label) {
+                    throw new Error('Label is required');
+                }
+                const feeBps = Number(values.feeBps);
+                if (!Number.isFinite(feeBps)) {
+                    throw new Error('Fee BPS must be numeric');
+                }
+                const { client, ownerAddress } = await createMarketplaceOwnerClient();
+                try {
+                    const msg = {
+                        config: {
+                            manager: ownerAddress,
+                            fee_recipient: values.feeRecipient,
+                            fee_bps: feeBps,
+                            sale_approvals: values.saleApprovals?.toLowerCase() === 'true',
+                            listing_denom: values.listingDenom || config.defaultDenom,
+                        },
+                    };
+                    const admin = parseOptionalString(values.admin) ?? ownerAddress;
+                    const result = await client.instantiate(ownerAddress, codeId, msg, values.label, 'auto', {
+                        admin,
+                    });
+                    if (values.useAsMarketplace) {
+                        updateConfig({ marketplaceContract: result.contractAddress });
+                    }
+                    return {
+                        txHash: result.transactionHash,
+                        detail: `Marketplace contract at ${result.contractAddress}`,
+                    };
+                }
+                finally {
+                    client.disconnect();
+                }
+            }),
+        },
+    ], [config.defaultDenom, createMarketplaceOwnerClient, marketplaceOwnerAddress, ownerClientUnavailable, runWithLog, updateConfig]);
+    const assetActions = useMemo(() => [
+        {
+            key: 'mint-nft',
+            title: 'Mint NFT',
+            description: 'Direct mint via asset contract',
+            fields: [
+                { name: 'tokenId', label: 'Token ID', type: 'text' },
+                { name: 'owner', label: 'Owner Address', type: 'text' },
+                { name: 'tokenUri', label: 'Token URI', type: 'text', required: false },
+                {
+                    name: 'extension',
+                    label: 'Extension JSON',
+                    type: 'textarea',
+                    placeholder: '{\n  "name": "Demo"\n}',
+                    required: false,
+                },
+            ],
+            disabled: !isConnected,
+            disabledReason: 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Mint NFT', async () => {
+                const msg = {
+                    mint: {
+                        token_id: values.tokenId,
+                        owner: values.owner,
+                        token_uri: parseOptionalString(values.tokenUri),
+                        extension: safeJsonParse(values.extension, {}),
+                    },
+                };
+                const res = await execute(config.assetContract, msg);
+                return { txHash: res.transactionHash, detail: `Minted ${values.tokenId}` };
+            }),
+        },
+        {
+            key: 'approve-token',
+            title: 'Approve Token',
+            fields: [
+                { name: 'tokenId', label: 'Token ID', type: 'text' },
+                { name: 'spender', label: 'Spender', type: 'text' },
+                {
+                    name: 'expiration',
+                    label: 'Expiration',
+                    type: 'text',
+                    placeholder: 'never | height:123 | time:1700',
+                    required: false,
+                },
+            ],
+            disabled: assetContractMissing || !isConnected,
+            disabledReason: assetContractMissing ? 'Set the asset contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Approve Token', async () => {
+                const expires = parseExpiration(values.expiration);
+                const msg = {
+                    approve: {
+                        spender: values.spender,
+                        token_id: values.tokenId,
+                        ...(expires ? { expires } : {}),
+                    },
+                };
+                const res = await execute(config.assetContract, msg);
+                return { txHash: res.transactionHash, detail: `Approved ${values.tokenId}` };
+            }),
+        },
+        {
+            key: 'revoke-token',
+            title: 'Revoke Token Approval',
+            fields: [
+                { name: 'tokenId', label: 'Token ID', type: 'text' },
+                { name: 'spender', label: 'Spender', type: 'text' },
+            ],
+            disabled: assetContractMissing || !isConnected,
+            disabledReason: assetContractMissing ? 'Set the asset contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Revoke Approval', async () => {
+                const msg = {
+                    revoke: {
+                        spender: values.spender,
+                        token_id: values.tokenId,
+                    },
+                };
+                const res = await execute(config.assetContract, msg);
+                return { txHash: res.transactionHash, detail: `Revoked ${values.spender}` };
+            }),
+        },
+        {
+            key: 'operator-grant',
+            title: 'Set Operator',
+            fields: [
+                { name: 'operator', label: 'Operator', type: 'text' },
+                {
+                    name: 'expiration',
+                    label: 'Expiration',
+                    type: 'text',
+                    placeholder: 'never | height:123 | time:1700',
+                    required: false,
+                },
+            ],
+            disabled: assetContractMissing || !isConnected,
+            disabledReason: assetContractMissing ? 'Set the asset contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Set Operator', async () => {
+                const expires = parseExpiration(values.expiration);
+                const msg = {
+                    approve_all: {
+                        operator: values.operator,
+                        ...(expires ? { expires } : {}),
+                    },
+                };
+                const res = await execute(config.assetContract, msg);
+                return { txHash: res.transactionHash, detail: `Operator ${values.operator}` };
+            }),
+        },
+        {
+            key: 'operator-revoke',
+            title: 'Revoke Operator',
+            fields: [{ name: 'operator', label: 'Operator', type: 'text' }],
+            disabled: assetContractMissing || !isConnected,
+            disabledReason: assetContractMissing ? 'Set the asset contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Revoke Operator', async () => {
+                const msg = {
+                    revoke_all: {
+                        operator: values.operator,
+                    },
+                };
+                const res = await execute(config.assetContract, msg);
+                return { txHash: res.transactionHash, detail: `Revoked ${values.operator}` };
+            }),
+        },
+        {
+            key: 'transfer-nft',
+            title: 'Transfer NFT (custom mnemonic)',
+            description: 'Transfers directly via the provided mnemonic; defaults to the console mnemonic when empty.',
+            fields: [
+                { name: 'tokenId', label: 'Token ID', type: 'text' },
+                { name: 'recipient', label: 'Recipient Address', type: 'text' },
+                {
+                    name: 'mnemonic',
+                    label: 'Signer Mnemonic (optional)',
+                    type: 'textarea',
+                    placeholder: 'word1 word2 ...',
+                    required: false,
+                },
+            ],
+            disabled: assetContractMissing,
+            disabledReason: assetContractMissing ? 'Set the asset contract address' : undefined,
+            onSubmit: (values) => runWithLog('Transfer NFT', async () => {
+                const { client, address } = await createCustomAssetClient(values.mnemonic);
+                if (!config.assetContract) {
+                    throw new Error('Asset contract address is required');
+                }
+                try {
+                    const msg = {
+                        transfer_nft: {
+                            recipient: values.recipient,
+                            token_id: values.tokenId,
+                        },
+                    };
+                    const res = await client.execute(address, config.assetContract, msg, 'auto');
+                    return { txHash: res.transactionHash, detail: `Transferred ${values.tokenId}` };
+                }
+                finally {
+                    client.disconnect();
+                }
+            }),
+        },
+    ], [assetContractMissing, config.assetContract, createCustomAssetClient, execute, isConnected, runWithLog]);
+    const assetListingActions = useMemo(() => [
+        {
+            key: 'list-asset',
+            title: 'List Asset',
+            description: 'Calls asset extension list',
+            fields: [
+                { name: 'tokenId', label: 'Token ID', type: 'text' },
+                { name: 'priceAmount', label: 'Price Amount', type: 'text' },
+                {
+                    name: 'priceDenom',
+                    label: 'Denom',
+                    type: 'text',
+                    defaultValue: config.defaultDenom,
+                },
+                {
+                    name: 'reserver',
+                    label: 'Reserved For (optional)',
+                    type: 'text',
+                    required: false,
+                },
+                {
+                    name: 'reservedUntil',
+                    label: 'Reserved Until (epoch seconds)',
+                    type: 'text',
+                    required: false,
+                },
+            ],
+            disabled: assetContractMissing || !isConnected,
+            disabledReason: assetContractMissing ? 'Set the asset contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('List Asset', async () => {
+                const reservation = values.reservedUntil
+                    ? {
+                        reserved_until: values.reservedUntil,
+                        ...(values.reserver ? { reserver: values.reserver } : {}),
+                    }
+                    : undefined;
+                const msg = {
+                    update_extension: {
+                        msg: {
+                            list: {
+                                token_id: values.tokenId,
+                                price: buildCoin(values.priceAmount, values.priceDenom),
+                                ...(reservation ? { reservation } : {}),
+                            },
+                        },
+                    },
+                };
+                const res = await execute(config.assetContract, msg);
+                return { txHash: res.transactionHash, detail: `Listed ${values.tokenId}` };
+            }),
+        },
+        {
+            key: 'reserve-asset',
+            title: 'Reserve Asset',
+            fields: [
+                { name: 'tokenId', label: 'Token ID', type: 'text' },
+                { name: 'reserver', label: 'Reserver', type: 'text', required: false },
+                {
+                    name: 'reservedUntil',
+                    label: 'Reserved Until (epoch seconds)',
+                    type: 'text',
+                },
+            ],
+            disabled: assetContractMissing || !isConnected,
+            disabledReason: assetContractMissing ? 'Set the asset contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Reserve Asset', async () => {
+                const msg = {
+                    update_extension: {
+                        msg: {
+                            reserve: {
+                                token_id: values.tokenId,
+                                reservation: {
+                                    reserved_until: values.reservedUntil,
+                                    reserver: values.reserver || undefined,
+                                },
+                            },
+                        },
+                    },
+                };
+                const res = await execute(config.assetContract, msg);
+                return { txHash: res.transactionHash, detail: `Reserved ${values.tokenId}` };
+            }),
+        },
+        {
+            key: 'unreserve-asset',
+            title: 'Unreserve Asset',
+            fields: [
+                { name: 'tokenId', label: 'Token ID', type: 'text' },
+                { name: 'delist', label: 'Also delist', type: 'checkbox', required: false },
+            ],
+            disabled: assetContractMissing || !isConnected,
+            disabledReason: assetContractMissing ? 'Set the asset contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Unreserve Asset', async () => {
+                const msg = {
+                    update_extension: {
+                        msg: {
+                            un_reserve: {
+                                token_id: values.tokenId,
+                                delist: Boolean(values.delist),
+                            },
+                        },
+                    },
+                };
+                const res = await execute(config.assetContract, msg);
+                return { txHash: res.transactionHash, detail: `Unreserved ${values.tokenId}` };
+            }),
+        },
+        {
+            key: 'delist-asset',
+            title: 'Delist Asset',
+            fields: [{ name: 'tokenId', label: 'Token ID', type: 'text' }],
+            disabled: assetContractMissing || !isConnected,
+            disabledReason: assetContractMissing ? 'Set the asset contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Delist Asset', async () => {
+                const msg = {
+                    update_extension: {
+                        msg: {
+                            delist: {
+                                token_id: values.tokenId,
+                            },
+                        },
+                    },
+                };
+                const res = await execute(config.assetContract, msg);
+                return { txHash: res.transactionHash, detail: `Delisted ${values.tokenId}` };
+            }),
+        },
+        {
+            key: 'buy-asset',
+            title: 'Buy Listed Asset',
+            fields: [
+                { name: 'tokenId', label: 'Token ID', type: 'text' },
+                { name: 'recipient', label: 'Recipient Override', type: 'text', required: false },
+                { name: 'priceAmount', label: 'Payment Amount', type: 'text' },
+                {
+                    name: 'priceDenom',
+                    label: 'Denom',
+                    type: 'text',
+                    defaultValue: config.defaultDenom,
+                },
+            ],
+            disabled: assetContractMissing || !isConnected,
+            disabledReason: assetContractMissing ? 'Set the asset contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Buy Asset', async () => {
+                const msg = {
+                    update_extension: {
+                        msg: {
+                            buy: {
+                                token_id: values.tokenId,
+                                recipient: values.recipient || undefined,
+                            },
+                        },
+                    },
+                };
+                const funds = [buildCoin(values.priceAmount, values.priceDenom)];
+                const res = await execute(config.assetContract, msg, undefined, funds);
+                return { txHash: res.transactionHash, detail: `Bought ${values.tokenId}` };
+            }),
+        },
+    ], [assetContractMissing, config.assetContract, config.defaultDenom, execute, isConnected, runWithLog]);
+    const marketplaceActions = useMemo(() => [
+        {
+            key: 'market-list',
+            title: 'Create Marketplace Listing',
+            fields: [
+                {
+                    name: 'collection',
+                    label: 'Collection',
+                    type: 'text',
+                    defaultValue: config.assetContract,
+                },
+                { name: 'tokenId', label: 'Token ID', type: 'text' },
+                { name: 'priceAmount', label: 'Price Amount', type: 'text' },
+                {
+                    name: 'priceDenom',
+                    label: 'Denom',
+                    type: 'text',
+                    defaultValue: config.defaultDenom,
+                },
+            ],
+            disabled: marketplaceMissing || !isConnected,
+            disabledReason: marketplaceMissing ? 'Set the marketplace contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Marketplace List', async () => {
+                const msg = {
+                    list_item: {
+                        collection: values.collection || config.assetContract,
+                        token_id: values.tokenId,
+                        price: buildCoin(values.priceAmount, values.priceDenom),
+                    },
+                };
+                const res = await execute(config.marketplaceContract, msg);
+                return { txHash: res.transactionHash, detail: `Listing ${values.tokenId}` };
+            }),
+        },
+        {
+            key: 'market-cancel',
+            title: 'Cancel Listing',
+            fields: [{ name: 'listingId', label: 'Listing ID', type: 'text' }],
+            disabled: marketplaceMissing || !isConnected,
+            disabledReason: marketplaceMissing ? 'Set the marketplace contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Cancel Listing', async () => {
+                const msg = {
+                    cancel_listing: {
+                        listing_id: values.listingId,
+                    },
+                };
+                const res = await execute(config.marketplaceContract, msg);
+                return { txHash: res.transactionHash, detail: `Cancelled ${values.listingId}` };
+            }),
+        },
+        {
+            key: 'market-buy',
+            title: 'Buy Listing',
+            fields: [
+                { name: 'listingId', label: 'Listing ID', type: 'text' },
+                { name: 'priceAmount', label: 'Price Amount', type: 'text' },
+                {
+                    name: 'priceDenom',
+                    label: 'Denom',
+                    type: 'text',
+                    defaultValue: config.defaultDenom,
+                },
+            ],
+            disabled: marketplaceMissing || !isConnected,
+            disabledReason: marketplaceMissing ? 'Set the marketplace contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Buy Listing', async () => {
+                const price = buildCoin(values.priceAmount, values.priceDenom);
+                const msg = {
+                    buy_item: {
+                        listing_id: values.listingId,
+                        price,
+                    },
+                };
+                const res = await execute(config.marketplaceContract, msg, undefined, [price]);
+                return { txHash: res.transactionHash, detail: `Purchased listing ${values.listingId}` };
+            }),
+        },
+        {
+            key: 'market-finalize',
+            title: 'Finalize For Recipient',
+            fields: [
+                { name: 'listingId', label: 'Listing ID', type: 'text' },
+                { name: 'recipient', label: 'Recipient', type: 'text' },
+                { name: 'priceAmount', label: 'Price Amount', type: 'text' },
+                {
+                    name: 'priceDenom',
+                    label: 'Denom',
+                    type: 'text',
+                    defaultValue: config.defaultDenom,
+                },
+            ],
+            disabled: marketplaceMissing || !isConnected,
+            disabledReason: marketplaceMissing ? 'Set the marketplace contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Finalize Sale', async () => {
+                const price = buildCoin(values.priceAmount, values.priceDenom);
+                const msg = {
+                    finalize_for: {
+                        listing_id: values.listingId,
+                        recipient: values.recipient,
+                        price,
+                    },
+                };
+                const res = await execute(config.marketplaceContract, msg, undefined, [price]);
+                return { txHash: res.transactionHash, detail: `Finalized ${values.listingId}` };
+            }),
+        },
+        {
+            key: 'market-offer',
+            title: 'Create Offer',
+            fields: [
+                {
+                    name: 'collection',
+                    label: 'Collection',
+                    type: 'text',
+                    defaultValue: config.assetContract,
+                },
+                { name: 'tokenId', label: 'Token ID', type: 'text' },
+                { name: 'priceAmount', label: 'Offer Amount', type: 'text' },
+                {
+                    name: 'priceDenom',
+                    label: 'Denom',
+                    type: 'text',
+                    defaultValue: config.defaultDenom,
+                },
+            ],
+            disabled: marketplaceMissing || !isConnected,
+            disabledReason: marketplaceMissing ? 'Set the marketplace contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Create Offer', async () => {
+                const price = buildCoin(values.priceAmount, values.priceDenom);
+                const msg = {
+                    create_offer: {
+                        collection: values.collection || config.assetContract,
+                        token_id: values.tokenId,
+                        price,
+                    },
+                };
+                const res = await execute(config.marketplaceContract, msg, undefined, [price]);
+                return { txHash: res.transactionHash, detail: `Offer for ${values.tokenId}` };
+            }),
+        },
+        {
+            key: 'market-accept-offer',
+            title: 'Accept Offer',
+            fields: [
+                { name: 'offerId', label: 'Offer ID', type: 'text' },
+                {
+                    name: 'collection',
+                    label: 'Collection',
+                    type: 'text',
+                    defaultValue: config.assetContract,
+                },
+                { name: 'tokenId', label: 'Token ID', type: 'text' },
+                { name: 'priceAmount', label: 'Match Price', type: 'text' },
+                {
+                    name: 'priceDenom',
+                    label: 'Denom',
+                    type: 'text',
+                    defaultValue: config.defaultDenom,
+                },
+            ],
+            disabled: marketplaceMissing || !isConnected,
+            disabledReason: marketplaceMissing ? 'Set the marketplace contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Accept Offer', async () => {
+                const price = buildCoin(values.priceAmount, values.priceDenom);
+                const msg = {
+                    accept_offer: {
+                        id: values.offerId,
+                        collection: values.collection || config.assetContract,
+                        token_id: values.tokenId,
+                        price,
+                    },
+                };
+                const res = await execute(config.marketplaceContract, msg);
+                return { txHash: res.transactionHash, detail: `Accepted offer ${values.offerId}` };
+            }),
+        },
+        {
+            key: 'market-cancel-offer',
+            title: 'Cancel Offer',
+            fields: [{ name: 'offerId', label: 'Offer ID', type: 'text' }],
+            disabled: marketplaceMissing || !isConnected,
+            disabledReason: marketplaceMissing ? 'Set the marketplace contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Cancel Offer', async () => {
+                const msg = {
+                    cancel_offer: {
+                        id: values.offerId,
+                    },
+                };
+                const res = await execute(config.marketplaceContract, msg);
+                return { txHash: res.transactionHash, detail: `Cancelled offer ${values.offerId}` };
+            }),
+        },
+        {
+            key: 'market-collection-offer',
+            title: 'Collection Offer',
+            fields: [
+                {
+                    name: 'collection',
+                    label: 'Collection',
+                    type: 'text',
+                    defaultValue: config.assetContract,
+                },
+                { name: 'priceAmount', label: 'Offer Amount', type: 'text' },
+                {
+                    name: 'priceDenom',
+                    label: 'Denom',
+                    type: 'text',
+                    defaultValue: config.defaultDenom,
+                },
+            ],
+            disabled: marketplaceMissing || !isConnected,
+            disabledReason: marketplaceMissing ? 'Set the marketplace contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Collection Offer', async () => {
+                const price = buildCoin(values.priceAmount, values.priceDenom);
+                const msg = {
+                    create_collection_offer: {
+                        collection: values.collection || config.assetContract,
+                        price,
+                    },
+                };
+                const res = await execute(config.marketplaceContract, msg, undefined, [price]);
+                return { txHash: res.transactionHash, detail: `Collection offer ${values.collection}` };
+            }),
+        },
+        {
+            key: 'market-accept-co',
+            title: 'Accept Collection Offer',
+            fields: [
+                { name: 'offerId', label: 'Collection Offer ID', type: 'text' },
+                {
+                    name: 'collection',
+                    label: 'Collection',
+                    type: 'text',
+                    defaultValue: config.assetContract,
+                },
+                { name: 'tokenId', label: 'Token ID', type: 'text' },
+                { name: 'priceAmount', label: 'Match Amount', type: 'text' },
+                {
+                    name: 'priceDenom',
+                    label: 'Denom',
+                    type: 'text',
+                    defaultValue: config.defaultDenom,
+                },
+            ],
+            disabled: marketplaceMissing || !isConnected,
+            disabledReason: marketplaceMissing ? 'Set the marketplace contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Accept Collection Offer', async () => {
+                const price = buildCoin(values.priceAmount, values.priceDenom);
+                const msg = {
+                    accept_collection_offer: {
+                        id: values.offerId,
+                        collection: values.collection || config.assetContract,
+                        token_id: values.tokenId,
+                        price,
+                    },
+                };
+                const res = await execute(config.marketplaceContract, msg);
+                return { txHash: res.transactionHash, detail: `Accepted collection offer ${values.offerId}` };
+            }),
+        },
+        {
+            key: 'market-cancel-co',
+            title: 'Cancel Collection Offer',
+            fields: [{ name: 'offerId', label: 'Collection Offer ID', type: 'text' }],
+            disabled: marketplaceMissing || !isConnected,
+            disabledReason: marketplaceMissing ? 'Set the marketplace contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Cancel Collection Offer', async () => {
+                const msg = {
+                    cancel_collection_offer: {
+                        id: values.offerId,
+                    },
+                };
+                const res = await execute(config.marketplaceContract, msg);
+                return { txHash: res.transactionHash, detail: `Cancelled collection offer ${values.offerId}` };
+            }),
+        },
+        {
+            key: 'market-approve-sale',
+            title: 'Approve Pending Sale',
+            fields: [{ name: 'pendingId', label: 'Pending Sale ID', type: 'text' }],
+            disabled: marketplaceMissing || !isConnected,
+            disabledReason: marketplaceMissing ? 'Set the marketplace contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Approve Sale', async () => {
+                const msg = {
+                    approve_sale: {
+                        id: values.pendingId,
+                    },
+                };
+                const res = await execute(config.marketplaceContract, msg);
+                return { txHash: res.transactionHash, detail: `Approved ${values.pendingId}` };
+            }),
+        },
+        {
+            key: 'market-reject-sale',
+            title: 'Reject Pending Sale',
+            fields: [{ name: 'pendingId', label: 'Pending Sale ID', type: 'text' }],
+            disabled: marketplaceMissing || !isConnected,
+            disabledReason: marketplaceMissing ? 'Set the marketplace contract address' : 'Connect your wallet',
+            onSubmit: (values) => runWithLog('Reject Sale', async () => {
+                const msg = {
+                    reject_sale: {
+                        id: values.pendingId,
+                    },
+                };
+                const res = await execute(config.marketplaceContract, msg);
+                return { txHash: res.transactionHash, detail: `Rejected ${values.pendingId}` };
+            }),
+        },
+        {
+            key: 'market-update-config',
+            title: 'Update Marketplace Config (owner-signed)',
+            fields: [
+                { name: 'feeRecipient', label: 'Fee Recipient', type: 'text' },
+                { name: 'feeBps', label: 'Fee BPS', type: 'number', placeholder: '200' },
+                {
+                    name: 'saleApprovals',
+                    label: 'Require Sale Approvals (true/false)',
+                    type: 'text',
+                    placeholder: 'true',
+                },
+                {
+                    name: 'listingDenom',
+                    label: 'Listing Denom',
+                    type: 'text',
+                    defaultValue: config.defaultDenom,
+                },
+            ],
+            disabled: marketplaceMissing || ownerClientUnavailable,
+            disabledReason: marketplaceMissing
+                ? 'Set the marketplace contract address first'
+                : ownerClientUnavailable
+                    ? 'Set the RPC endpoint first'
+                    : undefined,
+            onSubmit: (values) => runWithLog('Update Config', async () => {
+                const { client, ownerAddress } = await createMarketplaceOwnerClient();
+                try {
+                    const msg = {
+                        update_config: {
+                            config: {
+                                manager: ownerAddress,
+                                fee_recipient: values.feeRecipient,
+                                fee_bps: Number(values.feeBps),
+                                sale_approvals: values.saleApprovals?.toLowerCase() === 'true',
+                                listing_denom: values.listingDenom || config.defaultDenom,
+                            },
+                        },
+                    };
+                    const res = await client.execute(ownerAddress, config.marketplaceContract, msg, 'auto');
+                    return { txHash: res.transactionHash, detail: 'Updated config' };
+                }
+                finally {
+                    client.disconnect();
+                }
+            }),
+        },
+    ], [
+        config.assetContract,
+        config.defaultDenom,
+        config.marketplaceContract,
+        createMarketplaceOwnerClient,
+        execute,
+        isConnected,
+        marketplaceMissing,
+        ownerClientUnavailable,
+        runWithLog,
+    ]);
+    return (_jsxs("div", { className: "app-shell", children: [_jsxs("header", { children: [_jsx("h1", { children: "Xion Marketplace Console" }), _jsx("p", { children: "Interact with asset + marketplace CosmWasm contracts for testing." })] }), _jsxs("main", { children: [_jsxs("section", { className: "grid", children: [_jsx(ConfigPanel, {}), _jsx(WalletPanel, {})] }), _jsx(ActionSection, { title: "Deploy Contracts", description: "Instantiate fresh asset or marketplace contracts (provide code IDs)", actions: instantiationActions }), _jsx(ActionSection, { title: "Asset Core", description: "Mint and manage approvals", actions: assetActions }), _jsx(ActionSection, { title: "Asset Listings", description: "List, reserve, delist, and buy", actions: assetListingActions }), _jsx(PluginManager, { addLog: addLog }), _jsx(PluginViewer, {}), _jsx(BalanceMonitor, {}), _jsx(AssetGallery, {}), _jsx(ActionSection, { title: "Marketplace", description: "List, trade, offers, and config", actions: marketplaceActions }), _jsxs("section", { children: [_jsx("div", { className: "section-header", children: _jsx("h2", { children: "Queries" }) }), _jsx(QueryPanel, { addLog: addLog })] }), _jsxs("section", { children: [_jsx("div", { className: "section-header", children: _jsx("h2", { children: "Execution Log" }) }), _jsx(ExecutionLog, { entries: logs })] })] })] }));
+}

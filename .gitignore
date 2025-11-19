@@ -1,12 +1,10 @@
 # Dependencies
 node_modules/
-client/node_modules/
 .pnp
 .pnp.js
 
 # Build outputs
 dist/
-client/dist/
 build/
 *.local
 
@@ -25,9 +23,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
-
-# NestJS
-.nest/
 
 # Editor directories and files
 .vscode/*

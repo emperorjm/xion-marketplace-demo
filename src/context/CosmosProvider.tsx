@@ -14,7 +14,7 @@ export interface CosmosConfig {
   defaultDenom: string;
 }
 
-interface CosmosContextValue {
+export interface CosmosContextValue {
   config: CosmosConfig;
   updateConfig: (patch: Partial<CosmosConfig>) => void;
   address: string;
@@ -29,7 +29,7 @@ interface CosmosContextValue {
     msg: Record<string, unknown>,
     memo?: string,
     funds?: readonly Coin[],
-  ) => Promise<import('@cosmjs/cosmwasm-stargate').DeliverTxResponse>;
+  ) => Promise<import('@cosmjs/cosmwasm-stargate').ExecuteResult>;
   query: (contract: string, msg: Record<string, unknown>) => Promise<unknown>;
   instantiate: (
     codeId: number,
@@ -45,13 +45,13 @@ interface CosmosContextValue {
 }
 
 const defaultConfig: CosmosConfig = {
-  rpcEndpoint: '',
-  chainId: '',
-  gasPrice: '0.025uxion',
-  prefix: 'xion',
-  assetContract: '',
-  marketplaceContract: '',
-  defaultDenom: 'uxion',
+  rpcEndpoint: import.meta.env.VITE_RPC_ENDPOINT || '',
+  chainId: import.meta.env.VITE_CHAIN_ID || '',
+  gasPrice: import.meta.env.VITE_GAS_PRICE || '0.025uxion',
+  prefix: import.meta.env.VITE_PREFIX || 'xion',
+  assetContract: import.meta.env.VITE_ASSET_CONTRACT || '',
+  marketplaceContract: import.meta.env.VITE_MARKETPLACE_CONTRACT || '',
+  defaultDenom: import.meta.env.VITE_DEFAULT_DENOM || 'uxion',
 };
 
 const CosmosContext = createContext<CosmosContextValue | undefined>(undefined);
@@ -95,7 +95,6 @@ export const CosmosProvider: React.FC<React.PropsWithChildren> = ({ children }) 
           signer,
           {
             gasPrice: GasPrice.fromString(config.gasPrice),
-            prefix: config.prefix,
           },
         );
         setSigningClient(client);

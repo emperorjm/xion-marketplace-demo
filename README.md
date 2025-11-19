@@ -1,44 +1,53 @@
 # Xion Marketplace Console
 
-Nest + React tooling to exercise the `asset` + `marketplace` CosmWasm contracts in this repo. It focuses on functionality over design and includes contract-aware forms, plugin management, and simple logging.
+React + Vite application to exercise the `asset` + `marketplace` CosmWasm contracts. It focuses on functionality over design and includes contract-aware forms, plugin management, and simple logging.
 
 ## Structure
 
 ```
-ui/marketplace-console
-├── package.json          # Nest server + static hosting for client build
-├── src                   # Minimal Nest app (serve static + /api/health)
-└── client                # Vite + React front-end with CosmJS
+xion-marketplace-demo/
+├── package.json          # Vite + React dependencies
+├── vite.config.ts        # Vite configuration
+├── src/                  # React application source
+├── public/               # Static assets
+└── index.html            # Entry HTML file
 ```
 
-The Nest server only serves the compiled client bundle. All blockchain interactions happen in the browser via CosmJS.
+All blockchain interactions happen in the browser via CosmJS. No backend required.
 
 ## Getting Started
 
 ```bash
-cd ui/marketplace-console
-npm install                 # Nest dependencies
-npm --prefix client install # client dependencies
-npm run client:dev          # (runs client dev server via Vite)
-# in another terminal you can start Nest once the client is built
-npm run start:dev           # serves API + any pre-built assets on http://localhost:3000
+npm install              # Install dependencies
+npm run dev             # Start dev server on http://localhost:5173
 ```
 
-To serve the React bundle through Nest, build the client first:
+For production build:
 
 ```bash
-npm run client:build
-npm run build
-NODE_ENV=production npm start
+npm run build           # Build for production (outputs to dist/)
+npm run preview         # Preview production build locally
 ```
 
-For production-style testing:
+## Deployment
 
-```bash
-npm run client:build
-npm run build        # builds Nest into dist/
-NODE_ENV=production npm start
-```
+This is a static site that can be deployed to:
+- **Vercel** (recommended): `vercel deploy`
+- **Netlify**: Deploy the `dist/` folder
+- **AWS S3 + CloudFront**
+- **GitHub Pages**
+- Any static hosting service
+
+Simply deploy the `dist/` folder after running `npm run build`.
+
+## Configuration
+
+Copy `.env.example` to `.env.local` and configure:
+- RPC endpoint
+- Chain ID
+- Contract addresses
+- Gas price
+- Bech32 prefix
 
 ## Using the Console
 
@@ -59,4 +68,3 @@ Each submit logs the tx hash/result in the Execution Log for quick debugging.
 - CosmJS runs fully client-side. Provide the RPC URL of your Xion node; REST is not needed.
 - Plugin helpers support all variants defined in `contracts/asset/src/plugin.rs` (exact/min price, proof, not-before/after, timelock, royalty, marketplace/currency allowlists).
 - Sale approvals in the marketplace use the dedicated forms (Approve/Reject).
-- Because this lives outside Cargo workspaces, it will not interfere with Rust builds/tests.
