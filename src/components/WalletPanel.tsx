@@ -2,15 +2,7 @@ import React from 'react';
 import { useCosmos } from '../hooks/useCosmos';
 
 export const WalletPanel: React.FC = () => {
-  const { address, isConnected, connectKeplr, connectMnemonic, disconnect, loading, error } = useCosmos();
-
-  const handleMnemonicConnect = async () => {
-    try {
-      await connectMnemonic();
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  const { address, isConnected, connectKeplr, disconnect, loading, error } = useCosmos();
 
   const handleKeplr = async () => {
     try {
@@ -24,7 +16,7 @@ export const WalletPanel: React.FC = () => {
     <div className="wallet-panel">
       <h3>Wallet</h3>
       <p className="helper-text">
-        Connect with Keplr or supply a testing mnemonic (never use production secrets here).
+        Connect with Keplr wallet extension to interact with contracts.
       </p>
       <p><strong>Status:</strong> {isConnected ? 'Connected' : 'Disconnected'}</p>
       {address && <p><strong>Address:</strong> {address}</p>}
@@ -37,9 +29,6 @@ export const WalletPanel: React.FC = () => {
           Disconnect
         </button>
       </div>
-      <button className="primary" type="button" style={{ marginTop: '0.75rem' }} onClick={handleMnemonicConnect} disabled={loading}>
-        Connect via Default Mnemonic
-      </button>
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { CosmWasmClient, SigningCosmWasmClient } from '@cosmjs/cosmwasm-stargate';
 import { GasPrice } from '@cosmjs/stargate';
-import { DirectSecp256k1HdWallet, OfflineSigner } from '@cosmjs/proto-signing';
+import { OfflineSigner } from '@cosmjs/proto-signing';
 import { Coin } from '@cosmjs/amino';
 
 export interface CosmosConfig {
@@ -22,7 +22,6 @@ export interface CosmosContextValue {
   loading: boolean;
   error: string | null;
   connectKeplr: () => Promise<void>;
-  connectMnemonic: () => Promise<void>;
   disconnect: () => void;
   execute: (
     contract: string,
@@ -119,18 +118,6 @@ export const CosmosProvider: React.FC<React.PropsWithChildren> = ({ children }) 
     await connectWithSigner(signer);
   }, [config.chainId, connectWithSigner]);
 
-  const connectMnemonic = useCallback(async () => {
-    const defaultMnemonic =
-      'hidden candy lecture little retreat supreme immense fix path absurd dilemma jar rally express click weird near drop uncover plunge flush scan ship plastic';
-    if (!defaultMnemonic.trim()) {
-      throw new Error('Mnemonic cannot be empty');
-    }
-    const signer = await DirectSecp256k1HdWallet.fromMnemonic(defaultMnemonic, {
-      prefix: config.prefix,
-    });
-      await connectWithSigner(signer);
-  }, [config.prefix, connectWithSigner]);
-
   const disconnect = useCallback(() => {
     setSigningClient(null);
     setAddress('');
@@ -211,7 +198,6 @@ export const CosmosProvider: React.FC<React.PropsWithChildren> = ({ children }) 
       loading,
       error,
       connectKeplr,
-      connectMnemonic,
       disconnect,
       execute,
       query,
@@ -222,7 +208,6 @@ export const CosmosProvider: React.FC<React.PropsWithChildren> = ({ children }) 
       address,
       config,
       connectKeplr,
-      connectMnemonic,
       disconnect,
       error,
       execute,

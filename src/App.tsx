@@ -1,7 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { DirectSecp256k1HdWallet } from '@cosmjs/proto-signing';
-import { SigningCosmWasmClient } from '@cosmjs/cosmwasm-stargate';
-import { GasPrice } from '@cosmjs/stargate';
+import { useCallback, useMemo, useState } from 'react';
 import { useCosmos } from './hooks/useCosmos';
 import { ConfigPanel } from './components/ConfigPanel';
 import { WalletPanel } from './components/WalletPanel';
@@ -21,67 +18,9 @@ import {
   randomId,
 } from './lib/helpers';
 
-const DEFAULT_USER_MNEMONIC =
-  'hidden candy lecture little retreat supreme immense fix path absurd dilemma jar rally express click weird near drop uncover plunge flush scan ship plastic';
-const MARKETPLACE_OWNER_MNEMONIC =
-  'dad injury share hurry planet comfort rapid limb kind other region stumble guide error skill cigar key payment version bless vapor empty acquire peanut';
-
 export default function App() {
-  const { config, execute, instantiate, isConnected, updateConfig } = useCosmos();
-  const [marketplaceOwnerAddress, setMarketplaceOwnerAddress] = useState('');
+  const { config, execute, instantiate, isConnected, updateConfig, address } = useCosmos();
   const [logs, setLogs] = useState<LogEntry[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const wallet = await DirectSecp256k1HdWallet.fromMnemonic(MARKETPLACE_OWNER_MNEMONIC, {
-          prefix: config.prefix,
-        });
-        const [account] = await wallet.getAccounts();
-        if (!cancelled) {
-          setMarketplaceOwnerAddress(account.address);
-        }
-      } catch (err) {
-        console.error('Failed to derive marketplace owner address', err);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [config.prefix]);
-
-  const createMarketplaceOwnerClient = useCallback(async () => {
-    if (!config.rpcEndpoint) {
-      throw new Error('RPC endpoint is required');
-    }
-    const wallet = await DirectSecp256k1HdWallet.fromMnemonic(MARKETPLACE_OWNER_MNEMONIC, {
-      prefix: config.prefix,
-    });
-    const [account] = await wallet.getAccounts();
-    const client = await SigningCosmWasmClient.connectWithSigner(config.rpcEndpoint, wallet, {
-      gasPrice: GasPrice.fromString(config.gasPrice),
-    });
-    return { client, ownerAddress: account.address };
-  }, [config.gasPrice, config.prefix, config.rpcEndpoint]);
-
-  const createCustomAssetClient = useCallback(
-    async (mnemonic?: string) => {
-      if (!config.rpcEndpoint) {
-        throw new Error('RPC endpoint is required');
-      }
-      const phrase = mnemonic && mnemonic.trim().length ? mnemonic.trim() : DEFAULT_USER_MNEMONIC;
-      const wallet = await DirectSecp256k1HdWallet.fromMnemonic(phrase, {
-        prefix: config.prefix,
-      });
-      const [account] = await wallet.getAccounts();
-      const client = await SigningCosmWasmClient.connectWithSigner(config.rpcEndpoint, wallet, {
-        gasPrice: GasPrice.fromString(config.gasPrice),
-      });
-      return { client, address: account.address };
-    },
-    [config.gasPrice, config.prefix, config.rpcEndpoint],
-  );
 
   const addLog = useCallback((entry: Omit<LogEntry, 'id' | 'timestamp'> & Partial<Pick<LogEntry, 'id' | 'timestamp'>>) => {
     const next: LogEntry = {
@@ -193,7 +132,7 @@ export default function App() {
       {
         key: 'instantiate-marketplace',
         title: 'Instantiate Marketplace Contract',
-        description: `Deploys the marketplace contract (manager fixed to ${marketplaceOwnerAddress || 'derived owner'})`,
+        description: 'Deploys the marketplace contract with your connected wallet as manager',
         fields: [
           { name: 'codeId', label: 'Marketplace Code ID', type: 'number' },
           { name: 'label', label: 'Instantiate Label', type: 'text' },
@@ -249,36 +188,31 @@ export default function App() {
             if (!Number.isFinite(feeBps)) {
               throw new Error('Fee BPS must be numeric');
             }
-            const { client, ownerAddress } = await createMarketplaceOwnerClient();
-            try {
-              const msg = {
-                config: {
-                  manager: ownerAddress,
-                  fee_recipient: values.feeRecipient as string,
-                  fee_bps: feeBps,
-                  sale_approvals:
-                    (values.saleApprovals as string)?.toLowerCase() === 'true',
-                  listing_denom: (values.listingDenom as string) || config.defaultDenom,
-                },
-              };
-              const admin = parseOptionalString(values.admin as string) ?? ownerAddress;
-              const result = await client.instantiate(ownerAddress, codeId, msg, values.label as string, 'auto', {
-                admin,
-              });
-              if (values.useAsMarketplace) {
-                updateConfig({ marketplaceContract: result.contractAddress });
-              }
-              return {
-                txHash: result.transactionHash,
-                detail: `Marketplace contract at ${result.contractAddress}`,
-              };
-            } finally {
-              client.disconnect();
+            const msg = {
+              config: {
+                manager: address,
+                fee_recipient: values.feeRecipient as string,
+                fee_bps: feeBps,
+                sale_approvals:
+                  (values.saleApprovals as string)?.toLowerCase() === 'true',
+                listing_denom: (values.listingDenom as string) || config.defaultDenom,
+              },
+            };
+            const admin = parseOptionalString(values.admin as string) ?? address;
+            const result = await instantiate(codeId, msg, values.label as string, {
+              admin,
+            });
+            if (values.useAsMarketplace) {
+              updateConfig({ marketplaceContract: result.contractAddress });
             }
+            return {
+              txHash: result.transactionHash,
+              detail: `Marketplace contract at ${result.contractAddress}`,
+            };
           }),
       },
     ],
-    [config.defaultDenom, createMarketplaceOwnerClient, marketplaceOwnerAddress, ownerClientUnavailable, runWithLog, updateConfig],
+    [address, config.defaultDenom, instantiate, ownerClientUnavailable, runWithLog, updateConfig],
   );
 
   const assetActions: ActionDefinition[] = useMemo(
@@ -413,43 +347,28 @@ export default function App() {
       },
       {
         key: 'transfer-nft',
-        title: 'Transfer NFT (custom mnemonic)',
-        description: 'Transfers directly via the provided mnemonic; defaults to the console mnemonic when empty.',
+        title: 'Transfer NFT',
+        description: 'Transfer an NFT to another address using your connected wallet.',
         fields: [
           { name: 'tokenId', label: 'Token ID', type: 'text' },
           { name: 'recipient', label: 'Recipient Address', type: 'text' },
-          {
-            name: 'mnemonic',
-            label: 'Signer Mnemonic (optional)',
-            type: 'textarea',
-            placeholder: 'word1 word2 ...',
-            required: false,
-          },
         ],
-        disabled: assetContractMissing,
-        disabledReason: assetContractMissing ? 'Set the asset contract address' : undefined,
+        disabled: assetContractMissing || !isConnected,
+        disabledReason: assetContractMissing ? 'Set the asset contract address' : 'Connect your wallet',
         onSubmit: (values) =>
           runWithLog('Transfer NFT', async () => {
-            const { client, address } = await createCustomAssetClient(values.mnemonic as string | undefined);
-            if (!config.assetContract) {
-              throw new Error('Asset contract address is required');
-            }
-            try {
-              const msg = {
-                transfer_nft: {
-                  recipient: values.recipient,
-                  token_id: values.tokenId,
-                },
-              };
-              const res = await client.execute(address, config.assetContract, msg, 'auto');
-              return { txHash: res.transactionHash, detail: `Transferred ${values.tokenId}` };
-            } finally {
-              client.disconnect();
-            }
+            const msg = {
+              transfer_nft: {
+                recipient: values.recipient,
+                token_id: values.tokenId,
+              },
+            };
+            const res = await execute(config.assetContract, msg);
+            return { txHash: res.transactionHash, detail: `Transferred ${values.tokenId}` };
           }),
       },
     ],
-    [assetContractMissing, config.assetContract, createCustomAssetClient, execute, isConnected, runWithLog],
+    [assetContractMissing, config.assetContract, execute, isConnected, runWithLog],
   );
 
   const assetListingActions: ActionDefinition[] = useMemo(
@@ -969,32 +888,27 @@ export default function App() {
             : undefined,
         onSubmit: (values) =>
           runWithLog('Update Config', async () => {
-            const { client, ownerAddress } = await createMarketplaceOwnerClient();
-            try {
-              const msg = {
-                update_config: {
-                  config: {
-                    manager: ownerAddress,
-                    fee_recipient: values.feeRecipient,
-                    fee_bps: Number(values.feeBps),
-                    sale_approvals: (values.saleApprovals as string)?.toLowerCase() === 'true',
-                    listing_denom: values.listingDenom || config.defaultDenom,
-                  },
+            const msg = {
+              update_config: {
+                config: {
+                  manager: address,
+                  fee_recipient: values.feeRecipient,
+                  fee_bps: Number(values.feeBps),
+                  sale_approvals: (values.saleApprovals as string)?.toLowerCase() === 'true',
+                  listing_denom: values.listingDenom || config.defaultDenom,
                 },
-              };
-              const res = await client.execute(ownerAddress, config.marketplaceContract, msg, 'auto');
-              return { txHash: res.transactionHash, detail: 'Updated config' };
-            } finally {
-              client.disconnect();
-            }
+              },
+            };
+            const res = await execute(config.marketplaceContract, msg);
+            return { txHash: res.transactionHash, detail: 'Updated config' };
           }),
       },
     ],
     [
+      address,
       config.assetContract,
       config.defaultDenom,
       config.marketplaceContract,
-      createMarketplaceOwnerClient,
       execute,
       isConnected,
       marketplaceMissing,
