@@ -3,6 +3,9 @@ import { CosmWasmClient, SigningCosmWasmClient } from '@cosmjs/cosmwasm-stargate
 import { GasPrice } from '@cosmjs/stargate';
 import { OfflineSigner } from '@cosmjs/proto-signing';
 import { Coin } from '@cosmjs/amino';
+import { useAbstraxionAccount, useAbstraxionSigningClient } from '@burnt-labs/abstraxion';
+
+export type WalletType = 'abstraxion' | 'keplr' | null;
 
 export interface CosmosConfig {
   rpcEndpoint: string;
@@ -21,6 +24,8 @@ export interface CosmosContextValue {
   isConnected: boolean;
   loading: boolean;
   error: string | null;
+  walletType: WalletType;
+  connectAbstraxion: () => void;
   connectKeplr: () => Promise<void>;
   disconnect: () => void;
   execute: (
@@ -66,11 +71,36 @@ declare global {
 
 export const CosmosProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   const [config, setConfig] = useState<CosmosConfig>(defaultConfig);
-  const [signingClient, setSigningClient] = useState<SigningCosmWasmClient | null>(null);
+  const [keplrSigningClient, setKeplrSigningClient] = useState<SigningCosmWasmClient | null>(null);
   const [queryClient, setQueryClient] = useState<CosmWasmClient | null>(null);
-  const [address, setAddress] = useState('');
+  const [keplrAddress, setKeplrAddress] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [walletType, setWalletType] = useState<WalletType>(null);
+
+  // Abstraxion hooks
+  const { data: abstraxionAccount, isConnected: isAbstraxionConnected } = useAbstraxionAccount();
+  const { client: abstraxionClient, logout: abstraxionLogout } = useAbstraxionSigningClient();
+
+  // Determine active address and client based on wallet type
+  const address = walletType === 'abstraxion'
+    ? (abstraxionAccount?.bech32Address || '')
+    : keplrAddress;
+
+  const signingClient = walletType === 'abstraxion'
+    ? abstraxionClient
+    : keplrSigningClient;
+
+  const isConnected = walletType === 'abstraxion'
+    ? isAbstraxionConnected && Boolean(abstraxionClient)
+    : Boolean(keplrSigningClient && keplrAddress);
+
+  // Auto-detect Abstraxion connection
+  useEffect(() => {
+    if (isAbstraxionConnected && abstraxionClient && walletType !== 'keplr') {
+      setWalletType('abstraxion');
+    }
+  }, [isAbstraxionConnected, abstraxionClient, walletType]);
 
   useEffect(() => {
     setQueryClient(null);
@@ -96,8 +126,9 @@ export const CosmosProvider: React.FC<React.PropsWithChildren> = ({ children }) 
             gasPrice: GasPrice.fromString(config.gasPrice),
           },
         );
-        setSigningClient(client);
-        setAddress(account.address);
+        setKeplrSigningClient(client);
+        setKeplrAddress(account.address);
+        setWalletType('keplr');
       } catch (err) {
         console.error(err);
         setError(err instanceof Error ? err.message : 'Failed to connect');
@@ -109,6 +140,11 @@ export const CosmosProvider: React.FC<React.PropsWithChildren> = ({ children }) 
     [config],
   );
 
+  const connectAbstraxion = useCallback(() => {
+    // Abstraxion connection is handled by the modal - this just sets the wallet type preference
+    setWalletType('abstraxion');
+  }, []);
+
   const connectKeplr = useCallback(async () => {
     if (!window.keplr) {
       throw new Error('Keplr is not available in this browser');
@@ -119,9 +155,13 @@ export const CosmosProvider: React.FC<React.PropsWithChildren> = ({ children }) 
   }, [config.chainId, connectWithSigner]);
 
   const disconnect = useCallback(() => {
-    setSigningClient(null);
-    setAddress('');
-  }, []);
+    if (walletType === 'abstraxion') {
+      abstraxionLogout?.();
+    }
+    setKeplrSigningClient(null);
+    setKeplrAddress('');
+    setWalletType(null);
+  }, [walletType, abstraxionLogout]);
 
   const ensureQueryClient = useCallback(async () => {
     if (signingClient) {
@@ -194,9 +234,11 @@ export const CosmosProvider: React.FC<React.PropsWithChildren> = ({ children }) 
       config,
       updateConfig,
       address,
-      isConnected: Boolean(signingClient && address),
+      isConnected,
       loading,
       error,
+      walletType,
+      connectAbstraxion,
       connectKeplr,
       disconnect,
       execute,
@@ -207,16 +249,18 @@ export const CosmosProvider: React.FC<React.PropsWithChildren> = ({ children }) 
     [
       address,
       config,
+      connectAbstraxion,
       connectKeplr,
       disconnect,
       error,
       execute,
       getBalance,
       instantiate,
+      isConnected,
       loading,
       query,
       updateConfig,
-      signingClient,
+      walletType,
     ],
   );
 

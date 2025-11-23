@@ -48,11 +48,46 @@ Copy `.env.example` to `.env.local` and configure:
 - Contract addresses
 - Gas price
 - Bech32 prefix
+- Abstraxion treasury address (for gasless transactions)
+
+## Abstraxion Setup (Recommended)
+
+This app uses [Abstraxion](https://docs.burnt.com/xion/developers/featured-guides/your-first-dapp/treasury-contracts) as the primary wallet connection method, providing social login (Google, email, etc.) with gasless transactions. Keplr is available as a fallback for power users.
+
+### Setting Up a Treasury Contract
+
+Abstraxion requires a treasury contract to sponsor gas fees for your users. Follow these steps:
+
+#### 1. Access the Developer Portal
+- **Testnet**: https://dev.testnet2.burnt.com
+- **Mainnet**: https://dev.burnt.com
+
+#### 2. Create a Treasury
+1. Click **"New treasury"** in the Dashboard
+2. Configure a **Fee Grant** (at least one required):
+   - Allowance Type: `/cosmwasm.feegrant.v1beta1.BasicAllowance`
+   - Spend Limit: `1000uxion` (adjust as needed)
+3. Configure a **Grant Authorization** (at least one required):
+   - Type URL: `/cosmwasm.wasm.v1.MsgExecuteContract`
+   - Authorization Type: `/cosmwasm.wasm.v1.ContractExecutionAuthorization`
+   - Enter your marketplace and/or asset contract addresses
+4. Click **"Create"**
+
+#### 3. Fund the Treasury
+Transfer XION tokens to the treasury contract address so it can cover gas fees for users.
+
+#### 4. Configure Your App
+Add the treasury address to your `.env.local`:
+```
+VITE_ABSTRAXION_TREASURY=xion1your_treasury_address_here
+```
+
+For more details, see the [XION Treasury Documentation](https://docs.burnt.com/xion/developers/featured-guides/your-first-dapp/treasury-contracts).
 
 ## Using the Console
 
 1. **Configure chain + contracts** – provide RPC endpoint, chain ID, gas price, Bech32 prefix, and (optionally) existing contract addresses.
-2. **Connect a wallet** – use Keplr (preferred) or a development mnemonic. Never use production secrets.
+2. **Connect a wallet** – use Abstraxion (recommended) for social login with gasless transactions, or Keplr for browser extension wallet.
 3. **Instantiate contracts** – supply the stored code IDs to deploy fresh asset/marketplace instances (forms accept labels/admins and auto-update the config section if desired).
 4. **Asset operations** – Mint NFTs, manage token approvals/operators, configure collection plugins, and use asset-extension flows (list/reserve/delist/buy).
 5. **Monitor plugins & payouts** – Inspect collection plugins and snapshot balances for royalty + marketplace fee addresses (no polling required).
