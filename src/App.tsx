@@ -68,7 +68,7 @@ export default function App() {
         title: 'Instantiate Asset Contract',
         description: 'Deploys the asset (cw721-based) contract',
         fields: [
-          { name: 'codeId', label: 'Asset Code ID', type: 'number' },
+          { name: 'codeId', label: 'Asset Code ID', type: 'number', defaultValue: import.meta.env.VITE_ASSET_CODE_ID || '' },
           { name: 'label', label: 'Instantiate Label', type: 'text' },
           { name: 'admin', label: 'Admin Address (optional)', type: 'text', required: false },
           { name: 'name', label: 'Collection Name', type: 'text' },
@@ -134,7 +134,7 @@ export default function App() {
         title: 'Instantiate Marketplace Contract',
         description: 'Deploys the marketplace contract with your connected wallet as manager',
         fields: [
-          { name: 'codeId', label: 'Marketplace Code ID', type: 'number' },
+          { name: 'codeId', label: 'Marketplace Code ID', type: 'number', defaultValue: import.meta.env.VITE_MARKETPLACE_CODE_ID || '' },
           { name: 'label', label: 'Instantiate Label', type: 'text' },
           { name: 'admin', label: 'Admin Address (optional)', type: 'text', required: false },
           {
@@ -343,6 +343,22 @@ export default function App() {
             };
             const res = await execute(config.assetContract, msg);
             return { txHash: res.transactionHash, detail: `Revoked ${values.operator}` };
+          }),
+      },
+      {
+        key: 'accept-minter-ownership',
+        title: 'Accept Minter Ownership',
+        description: 'Accept a pending minter ownership transfer',
+        fields: [],
+        disabled: assetContractMissing || !isConnected,
+        disabledReason: assetContractMissing ? 'Set the asset contract address' : 'Connect your wallet',
+        onSubmit: () =>
+          runWithLog('Accept Minter Ownership', async () => {
+            const msg = {
+              update_minter_ownership: 'accept_ownership',
+            };
+            const res = await execute(config.assetContract, msg);
+            return { txHash: res.transactionHash, detail: 'Minter ownership accepted' };
           }),
       },
       {
