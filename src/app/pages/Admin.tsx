@@ -78,7 +78,12 @@ export function Admin() {
     setResult(null);
     try {
       // Query current config to get existing values
-      const currentConfig = await query(config.marketplaceContract, { config: {} });
+      const currentConfig = await query(config.marketplaceContract, { config: {} }) as {
+        manager?: string;
+        fee_recipient?: string;
+        sale_approvals?: boolean;
+        listing_denom?: string;
+      };
 
       // Convert fee percentage to basis points (2.5% → 250 bps)
       const feeBps = Math.round(parseFloat(feePercent) * 100);

@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useCosmos } from '../../hooks/useCosmos';
 import { useRole } from '../hooks/useLocalStore';
 import { fetchJsonFromUri, extractImageFromMetadata, buildCoin } from '../../lib/helpers';
-import { addActivity, addListing, getListing, removeListing } from '../store/localStore';
+import { addActivity, addListing, getListing, removeListing, addOffer, removeOffer, getOffersByToken } from '../store/localStore';
 
 interface NFTDetails {
   tokenId: string;
@@ -16,6 +16,13 @@ interface NFTDetails {
   denom?: string;
 }
 
+interface OfferInfo {
+  offerId: string;
+  bidder: string;
+  price: string;
+  denom: string;
+}
+
 export function ItemDetail() {
   const { tokenId } = useParams<{ tokenId: string }>();
   const { config, query, execute, address, isConnected } = useCosmos();
@@ -25,6 +32,9 @@ export function ItemDetail() {
   const [actionLoading, setActionLoading] = useState(false);
   const [listPrice, setListPrice] = useState('');
   const [showListModal, setShowListModal] = useState(false);
+  const [offerAmount, setOfferAmount] = useState('');
+  const [showOfferModal, setShowOfferModal] = useState(false);
+  const [offers, setOffers] = useState<OfferInfo[]>([]);
 
   const loadNFT = useCallback(async () => {
     if (!config.assetContract || !tokenId) return;
@@ -91,6 +101,16 @@ export function ItemDetail() {
         price,
         denom,
       });
+
+      // Load offers for this NFT from localStorage
+      // Note: Contract doesn't support listing offers by token, so we only show locally-tracked offers
+      const localOffers = getOffersByToken(tokenId);
+      setOffers(localOffers.map(o => ({
+        offerId: o.offerId,
+        bidder: o.bidder,
+        price: o.price,
+        denom: o.denom,
+      })));
     } catch (err) {
       console.error('Error loading NFT:', err);
     } finally {
@@ -206,6 +226,157 @@ export function ItemDetail() {
     }
   };
 
+  const handleMakeOffer = async () => {
+    if (!offerAmount || !nft) return;
+
+    const confirmed = window.confirm(
+      `Make offer of ${offerAmount} ${config.defaultDenom.replace('u', '').toUpperCase()} for "${nft.name}"?`
+    );
+    if (!confirmed) return;
+
+    setActionLoading(true);
+    try {
+      const priceInMicro = (parseFloat(offerAmount) * 1_000_000).toString();
+      const price = buildCoin(priceInMicro, config.defaultDenom);
+      const msg = {
+        create_offer: {
+          collection: config.assetContract,
+          token_id: tokenId,
+          price,
+        },
+      };
+      const result = await execute(config.marketplaceContract, msg, undefined, [price]);
+
+      // Generate offer ID from tx hash for localStorage tracking
+      const offerId = `offer-${result.transactionHash.slice(0, 16)}`;
+
+      addActivity({
+        type: 'offer',
+        tokenId: tokenId!,
+        from: address,
+        to: nft.owner,
+        price: priceInMicro,
+        txHash: result.transactionHash,
+      });
+
+      // Store offer in localStorage
+      addOffer(offerId, tokenId!, address!, priceInMicro, config.defaultDenom);
+
+      // Update offers state directly
+      setOffers(prev => [...prev, {
+        offerId,
+        bidder: address!,
+        price: priceInMicro,
+        denom: config.defaultDenom,
+      }]);
+
+      setShowOfferModal(false);
+      setOfferAmount('');
+      alert('Offer submitted successfully!');
+    } catch (err) {
+      console.error('Error making offer:', err);
+      alert(err instanceof Error ? err.message : 'Failed to make offer');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleAcceptOffer = async (offer: OfferInfo) => {
+    const confirmed = window.confirm(
+      `Accept offer of ${formatPrice(offer.price, offer.denom)} from ${offer.bidder.slice(0, 12)}...?`
+    );
+    if (!confirmed) return;
+
+    setActionLoading(true);
+    try {
+      const msg = { accept_offer: { offer_id: offer.offerId } };
+      const result = await execute(config.marketplaceContract, msg);
+
+      addActivity({
+        type: 'accept_offer',
+        tokenId: tokenId!,
+        from: address,
+        to: offer.bidder,
+        price: offer.price,
+        txHash: result.transactionHash,
+      });
+
+      // Remove offer from localStorage and update state
+      removeOffer(offer.offerId);
+      setOffers(prev => prev.filter(o => o.offerId !== offer.offerId));
+
+      // Update NFT state - owner is now the bidder
+      if (nft) {
+        setNft({ ...nft, owner: offer.bidder, isListed: false, price: undefined, denom: undefined });
+      }
+
+      alert('Offer accepted successfully!');
+    } catch (err) {
+      console.error('Error accepting offer:', err);
+      alert(err instanceof Error ? err.message : 'Failed to accept offer');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRejectOffer = async (offer: OfferInfo) => {
+    const confirmed = window.confirm('Reject this offer?');
+    if (!confirmed) return;
+
+    setActionLoading(true);
+    try {
+      const msg = { reject_offer: { offer_id: offer.offerId } };
+      const result = await execute(config.marketplaceContract, msg);
+
+      addActivity({
+        type: 'reject_offer',
+        tokenId: tokenId!,
+        from: address,
+        txHash: result.transactionHash,
+      });
+
+      // Remove offer from localStorage and update state
+      removeOffer(offer.offerId);
+      setOffers(prev => prev.filter(o => o.offerId !== offer.offerId));
+
+      alert('Offer rejected.');
+    } catch (err) {
+      console.error('Error rejecting offer:', err);
+      alert(err instanceof Error ? err.message : 'Failed to reject offer');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancelOffer = async (offer: OfferInfo) => {
+    const confirmed = window.confirm('Cancel your offer?');
+    if (!confirmed) return;
+
+    setActionLoading(true);
+    try {
+      const msg = { cancel_offer: { offer_id: offer.offerId } };
+      const result = await execute(config.marketplaceContract, msg);
+
+      addActivity({
+        type: 'cancel_offer',
+        tokenId: tokenId!,
+        from: address,
+        txHash: result.transactionHash,
+      });
+
+      // Remove offer from localStorage and update state
+      removeOffer(offer.offerId);
+      setOffers(prev => prev.filter(o => o.offerId !== offer.offerId));
+
+      alert('Offer cancelled.');
+    } catch (err) {
+      console.error('Error cancelling offer:', err);
+      alert(err instanceof Error ? err.message : 'Failed to cancel offer');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const isOwner = nft?.owner === address;
 
   if (loading) {
@@ -221,7 +392,7 @@ export function ItemDetail() {
       <div className="empty-state">
         <div className="empty-state-icon">❌</div>
         <div className="empty-state-title">NFT Not Found</div>
-        <Link to="/app/explore" className="btn btn-primary">
+        <Link to="/explore" className="btn btn-primary">
           Back to Explore
         </Link>
       </div>
@@ -230,7 +401,7 @@ export function ItemDetail() {
 
   return (
     <div>
-      <Link to="/app/explore" style={{ color: 'var(--text-secondary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
+      <Link to="/explore" style={{ color: 'var(--text-secondary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
         ← Back to Explore
       </Link>
 
@@ -287,6 +458,11 @@ export function ItemDetail() {
                         {actionLoading ? 'Buying...' : 'Buy Now'}
                       </button>
                     )}
+                    {!isOwner && (
+                      <button className="btn btn-secondary btn-lg" onClick={() => setShowOfferModal(true)} disabled={actionLoading}>
+                        Make Offer
+                      </button>
+                    )}
                     {isOwner && !nft.isListed && (role === 'seller' || role === 'admin') && (
                       <button className="btn btn-primary btn-lg" onClick={() => setShowListModal(true)}>
                         List for Sale
@@ -310,6 +486,64 @@ export function ItemDetail() {
               {isOwner && <span style={{ color: 'var(--accent-green)', marginLeft: '8px' }}>(You)</span>}
             </p>
           </div>
+
+          {/* Offers Section */}
+          {offers.length > 0 && (
+            <div>
+              <h3 style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                Offers ({offers.length})
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {offers.map((offer) => (
+                  <div
+                    key={offer.offerId}
+                    className="card"
+                    style={{ background: 'var(--bg-secondary)' }}
+                  >
+                    <div className="card-body" style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div>
+                        <p style={{ fontWeight: '600', marginBottom: '4px' }}>
+                          {formatPrice(offer.price, offer.denom)}
+                        </p>
+                        <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                          {offer.bidder === address ? 'Your offer' : `${offer.bidder.slice(0, 12)}...${offer.bidder.slice(-6)}`}
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        {isOwner && offer.bidder !== address && (
+                          <>
+                            <button
+                              className="btn btn-primary"
+                              onClick={() => handleAcceptOffer(offer)}
+                              disabled={actionLoading}
+                            >
+                              Accept
+                            </button>
+                            <button
+                              className="btn btn-secondary"
+                              onClick={() => handleRejectOffer(offer)}
+                              disabled={actionLoading}
+                            >
+                              Reject
+                            </button>
+                          </>
+                        )}
+                        {offer.bidder === address && (
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => handleCancelOffer(offer)}
+                            disabled={actionLoading}
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -343,6 +577,47 @@ export function ItemDetail() {
               </button>
               <button className="btn btn-primary" onClick={handleList} disabled={actionLoading || !listPrice}>
                 {actionLoading ? 'Listing...' : 'List NFT'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Offer Modal */}
+      {showOfferModal && (
+        <div className="modal-overlay" onClick={() => setShowOfferModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Make an Offer</h3>
+              <button className="modal-close" onClick={() => setShowOfferModal(false)}>
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">Offer Amount ({config.defaultDenom.replace('u', '').toUpperCase()})</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  value={offerAmount}
+                  onChange={(e) => setOfferAmount(e.target.value)}
+                  placeholder="0.00"
+                  step="0.01"
+                  min="0"
+                />
+              </div>
+              {nft?.isListed && nft.price && nft.denom && (
+                <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '8px' }}>
+                  Listed price: {formatPrice(nft.price, nft.denom)}
+                </p>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowOfferModal(false)}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={handleMakeOffer} disabled={actionLoading || !offerAmount}>
+                {actionLoading ? 'Submitting...' : 'Submit Offer'}
               </button>
             </div>
           </div>

@@ -27,6 +27,15 @@ export interface ListingInfo {
   listedAt: number;
 }
 
+export interface OfferInfo {
+  offerId: string;
+  tokenId: string;
+  bidder: string;
+  price: string;
+  denom: string;
+  createdAt: number;
+}
+
 export interface LocalStore {
   currentRole: UserRole;
   mockMode: boolean;
@@ -34,6 +43,7 @@ export interface LocalStore {
   recentActivity: ActivityItem[];
   feesConfigured?: boolean;
   listings?: Record<string, ListingInfo>;
+  offers?: Record<string, OfferInfo>;
 }
 
 export interface ActivityItem {
@@ -163,4 +173,41 @@ export function getListing(tokenId: string): ListingInfo | undefined {
 export function getAllListings(): ListingInfo[] {
   const listings = getStore().listings || {};
   return Object.values(listings);
+}
+
+// Offer tracking
+export function addOffer(offerId: string, tokenId: string, bidder: string, price: string, denom: string): void {
+  const store = getStore();
+  setStore({
+    offers: {
+      ...store.offers,
+      [offerId]: { offerId, tokenId, bidder, price, denom, createdAt: Date.now() },
+    },
+  });
+}
+
+export function removeOffer(offerId: string): void {
+  const store = getStore();
+  const offers = { ...store.offers };
+  delete offers[offerId];
+  setStore({ offers });
+}
+
+export function getOffer(offerId: string): OfferInfo | undefined {
+  return getStore().offers?.[offerId];
+}
+
+export function getOffersByToken(tokenId: string): OfferInfo[] {
+  const offers = getStore().offers || {};
+  return Object.values(offers).filter(o => o.tokenId === tokenId);
+}
+
+export function getOffersByBidder(bidder: string): OfferInfo[] {
+  const offers = getStore().offers || {};
+  return Object.values(offers).filter(o => o.bidder === bidder);
+}
+
+export function getAllOffers(): OfferInfo[] {
+  const offers = getStore().offers || {};
+  return Object.values(offers);
 }

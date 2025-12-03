@@ -27,7 +27,7 @@ export function Layout() {
   return (
     <div className="app-dark app-layout">
       <nav className="app-navbar">
-        <Link to="/app" className="app-navbar-brand">
+        <Link to="/" className="app-navbar-brand">
           <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="16" cy="16" r="14" fill="#22c55e" />
             <path d="M10 16L14 20L22 12" stroke="#000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -36,31 +36,31 @@ export function Layout() {
         </Link>
 
         <div className="app-navbar-nav">
-          <NavLink to="/app" end className={({ isActive }) => `app-nav-link ${isActive ? 'active' : ''}`}>
+          <NavLink to="/" end className={({ isActive }) => `app-nav-link ${isActive ? 'active' : ''}`}>
             Home
           </NavLink>
-          <NavLink to="/app/explore" className={({ isActive }) => `app-nav-link ${isActive ? 'active' : ''}`}>
+          <NavLink to="/explore" className={({ isActive }) => `app-nav-link ${isActive ? 'active' : ''}`}>
             Explore
           </NavLink>
-          <NavLink to="/app/my-items" className={({ isActive }) => `app-nav-link ${isActive ? 'active' : ''}`}>
+          <NavLink to="/my-items" className={({ isActive }) => `app-nav-link ${isActive ? 'active' : ''}`}>
             My Items
           </NavLink>
           {(role === 'seller' || role === 'admin') && (
             <>
-              <NavLink to="/app/create" className={({ isActive }) => `app-nav-link ${isActive ? 'active' : ''}`}>
+              <NavLink to="/create" className={({ isActive }) => `app-nav-link ${isActive ? 'active' : ''}`}>
                 Create
               </NavLink>
-              <NavLink to="/app/listings" className={({ isActive }) => `app-nav-link ${isActive ? 'active' : ''}`}>
+              <NavLink to="/listings" className={({ isActive }) => `app-nav-link ${isActive ? 'active' : ''}`}>
                 Listings
               </NavLink>
             </>
           )}
           {role === 'admin' && (
-            <NavLink to="/app/admin" className={({ isActive }) => `app-nav-link ${isActive ? 'active' : ''}`}>
+            <NavLink to="/admin" className={({ isActive }) => `app-nav-link ${isActive ? 'active' : ''}`}>
               Admin
             </NavLink>
           )}
-          <NavLink to="/app/activity" className={({ isActive }) => `app-nav-link ${isActive ? 'active' : ''}`}>
+          <NavLink to="/activity" className={({ isActive }) => `app-nav-link ${isActive ? 'active' : ''}`}>
             Activity
           </NavLink>
         </div>
@@ -91,7 +91,7 @@ export function Layout() {
             </button>
           )}
 
-          <Link to="/" className="btn btn-ghost btn-sm">
+          <Link to="/console" className="btn btn-ghost btn-sm">
             Console
           </Link>
         </div>

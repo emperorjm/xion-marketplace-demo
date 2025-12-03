@@ -119,7 +119,7 @@ export function Activity() {
                     <span style={{ fontWeight: '600' }}>{activity.description || getActivityLabel(activity.type)}</span>
                     {activity.tokenId !== 'system' && (
                       <Link
-                        to={`/app/item/${activity.tokenId}`}
+                        to={`/item/${activity.tokenId}`}
                         style={{ color: 'var(--accent-blue)', textDecoration: 'none', fontSize: '14px' }}
                       >
                         Token #{activity.tokenId}

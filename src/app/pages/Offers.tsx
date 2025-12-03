@@ -2,17 +2,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useCosmos } from '../../hooks/useCosmos';
 import { fetchJsonFromUri, extractImageFromMetadata } from '../../lib/helpers';
-import { addActivity } from '../store/localStore';
+import { addActivity, getOffersByBidder, removeOffer } from '../store/localStore';
 
 interface Offer {
   offerId: string;
   tokenId: string;
   name: string;
   image?: string;
-  offerer: string;
   price: string;
   denom: string;
-  type: 'incoming' | 'outgoing';
 }
 
 export function Offers() {
@@ -20,94 +18,54 @@ export function Offers() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'incoming' | 'outgoing'>('all');
 
   const loadOffers = useCallback(async () => {
-    if (!config.marketplaceContract || !address) {
+    if (!address) {
       setLoading(false);
       return;
     }
 
     setLoading(true);
     try {
-      // Query offers made by user (outgoing)
-      const outgoingResult = await query(config.marketplaceContract, {
-        offers_by_bidder: { bidder: address, limit: 50 },
-      }) as { offers: Array<{ offer_id: string; token_id: string; price: { amount: string; denom: string } }> };
-
-      // Query offers on user's NFTs (incoming) - would need to iterate through user's tokens
-      const tokensResult = await query(config.assetContract, {
-        tokens: { owner: address, limit: 100 },
-      }) as { tokens: string[] };
-
       const allOffers: Offer[] = [];
 
-      // Process outgoing offers
-      for (const offer of outgoingResult.offers || []) {
-        try {
-          const nftInfo = await query(config.assetContract, {
-            nft_info: { token_id: offer.token_id },
-          }) as { token_uri?: string; extension?: { name?: string; image?: string } };
+      // Load offers from localStorage (only offers you've made)
+      const localOffers = getOffersByBidder(address);
+      for (const offer of localOffers) {
+        let name = `Token #${offer.tokenId}`;
+        let image: string | undefined;
 
-          let name = nftInfo.extension?.name || `Token #${offer.token_id}`;
-          let image = nftInfo.extension?.image;
+        if (config.assetContract) {
+          try {
+            const nftInfo = await query(config.assetContract, {
+              nft_info: { token_id: offer.tokenId },
+            }) as { token_uri?: string; extension?: { name?: string; image?: string } };
 
-          if (nftInfo.token_uri && !image) {
-            try {
-              const metadata = await fetchJsonFromUri(nftInfo.token_uri);
-              name = metadata.name || name;
-              image = extractImageFromMetadata(metadata);
-            } catch {
-              // Ignore
+            name = nftInfo.extension?.name || name;
+            image = nftInfo.extension?.image;
+
+            if (nftInfo.token_uri && !image) {
+              try {
+                const metadata = await fetchJsonFromUri(nftInfo.token_uri);
+                name = metadata.name || name;
+                image = extractImageFromMetadata(metadata);
+              } catch {
+                // Ignore
+              }
             }
+          } catch {
+            // Ignore errors
           }
-
-          allOffers.push({
-            offerId: offer.offer_id,
-            tokenId: offer.token_id,
-            name,
-            image,
-            offerer: address,
-            price: offer.price.amount,
-            denom: offer.price.denom,
-            type: 'outgoing',
-          });
-        } catch {
-          // Ignore errors
         }
-      }
 
-      // Check for incoming offers on user's tokens
-      for (const tokenId of tokensResult.tokens || []) {
-        try {
-          const offersResult = await query(config.marketplaceContract, {
-            offers_by_token: { token_id: tokenId, limit: 50 },
-          }) as { offers: Array<{ offer_id: string; bidder: string; price: { amount: string; denom: string } }> };
-
-          for (const offer of offersResult.offers || []) {
-            if (offer.bidder !== address) {
-              const nftInfo = await query(config.assetContract, {
-                nft_info: { token_id: tokenId },
-              }) as { token_uri?: string; extension?: { name?: string; image?: string } };
-
-              let name = nftInfo.extension?.name || `Token #${tokenId}`;
-              let image = nftInfo.extension?.image;
-
-              allOffers.push({
-                offerId: offer.offer_id,
-                tokenId,
-                name,
-                image,
-                offerer: offer.bidder,
-                price: offer.price.amount,
-                denom: offer.price.denom,
-                type: 'incoming',
-              });
-            }
-          }
-        } catch {
-          // No offers or error
-        }
+        allOffers.push({
+          offerId: offer.offerId,
+          tokenId: offer.tokenId,
+          name,
+          image,
+          price: offer.price,
+          denom: offer.denom,
+        });
       }
 
       setOffers(allOffers);
@@ -116,7 +74,7 @@ export function Offers() {
     } finally {
       setLoading(false);
     }
-  }, [config.marketplaceContract, config.assetContract, address, query]);
+  }, [config.assetContract, address, query]);
 
   useEffect(() => {
     if (isConnected) {
@@ -126,57 +84,10 @@ export function Offers() {
     }
   }, [isConnected, loadOffers]);
 
-  const handleAcceptOffer = async (offer: Offer) => {
-    setActionLoading(offer.offerId);
-    try {
-      const msg = {
-        accept_offer: { offer_id: offer.offerId },
-      };
-      const result = await execute(config.marketplaceContract, msg);
-
-      addActivity({
-        type: 'accept_offer',
-        tokenId: offer.tokenId,
-        from: address,
-        to: offer.offerer,
-        price: offer.price,
-        txHash: result.transactionHash,
-      });
-
-      loadOffers();
-    } catch (err) {
-      console.error('Error accepting offer:', err);
-      alert(err instanceof Error ? err.message : 'Failed to accept offer');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleRejectOffer = async (offer: Offer) => {
-    setActionLoading(offer.offerId);
-    try {
-      const msg = {
-        reject_offer: { offer_id: offer.offerId },
-      };
-      const result = await execute(config.marketplaceContract, msg);
-
-      addActivity({
-        type: 'reject_offer',
-        tokenId: offer.tokenId,
-        from: address,
-        txHash: result.transactionHash,
-      });
-
-      loadOffers();
-    } catch (err) {
-      console.error('Error rejecting offer:', err);
-      alert(err instanceof Error ? err.message : 'Failed to reject offer');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
   const handleCancelOffer = async (offer: Offer) => {
+    const confirmed = window.confirm('Cancel your offer?');
+    if (!confirmed) return;
+
     setActionLoading(offer.offerId);
     try {
       const msg = {
@@ -191,7 +102,11 @@ export function Offers() {
         txHash: result.transactionHash,
       });
 
-      loadOffers();
+      // Remove offer from localStorage and update state
+      removeOffer(offer.offerId);
+      setOffers(prev => prev.filter(o => o.offerId !== offer.offerId));
+
+      alert('Offer cancelled.');
     } catch (err) {
       console.error('Error cancelling offer:', err);
       alert(err instanceof Error ? err.message : 'Failed to cancel offer');
@@ -205,19 +120,17 @@ export function Offers() {
     return `${num.toLocaleString()} ${denomination.replace('u', '').toUpperCase()}`;
   };
 
-  const filteredOffers = filter === 'all' ? offers : offers.filter((o) => o.type === filter);
-
   if (!isConnected) {
     return (
       <div>
         <div className="page-header">
-          <h1 className="page-title">Offers</h1>
-          <p className="page-subtitle">Manage your offers</p>
+          <h1 className="page-title">My Offers</h1>
+          <p className="page-subtitle">Offers you've made</p>
         </div>
         <div className="empty-state">
           <div className="empty-state-icon">🔒</div>
           <div className="empty-state-title">Connect Your Wallet</div>
-          <div className="empty-state-text">Connect your wallet to view offers</div>
+          <div className="empty-state-text">Connect your wallet to view your offers</div>
         </div>
       </div>
     );
@@ -227,24 +140,11 @@ export function Offers() {
     <div>
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <h1 className="page-title">Offers</h1>
-          <p className="page-subtitle">Manage incoming and outgoing offers</p>
+          <h1 className="page-title">My Offers</h1>
+          <p className="page-subtitle">Offers you've made (tracked locally in this browser)</p>
         </div>
         <button className="btn btn-secondary" onClick={loadOffers} disabled={loading}>
           {loading ? 'Loading...' : 'Refresh'}
-        </button>
-      </div>
-
-      {/* Filters */}
-      <div className="tabs">
-        <button className={`tab ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
-          All ({offers.length})
-        </button>
-        <button className={`tab ${filter === 'incoming' ? 'active' : ''}`} onClick={() => setFilter('incoming')}>
-          Incoming ({offers.filter((o) => o.type === 'incoming').length})
-        </button>
-        <button className={`tab ${filter === 'outgoing' ? 'active' : ''}`} onClick={() => setFilter('outgoing')}>
-          Outgoing ({offers.filter((o) => o.type === 'outgoing').length})
         </button>
       </div>
 
@@ -252,21 +152,20 @@ export function Offers() {
         <div className="loading">
           <div className="loading-spinner" />
         </div>
-      ) : filteredOffers.length === 0 ? (
+      ) : offers.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">📨</div>
           <div className="empty-state-title">No Offers</div>
           <div className="empty-state-text">
-            {filter === 'incoming'
-              ? 'No one has made offers on your NFTs yet.'
-              : filter === 'outgoing'
-              ? "You haven't made any offers yet."
-              : 'No offers to display.'}
+            You haven't made any offers yet. Browse NFTs and make offers from the item detail page.
           </div>
+          <Link to="/explore" className="btn btn-primary" style={{ marginTop: '16px' }}>
+            Explore NFTs
+          </Link>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {filteredOffers.map((offer) => (
+          {offers.map((offer) => (
             <div key={offer.offerId} className="card">
               <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
                 {/* NFT Image */}
@@ -291,51 +190,26 @@ export function Offers() {
 
                 {/* Offer Info */}
                 <div style={{ flex: 1 }}>
-                  <Link to={`/app/item/${offer.tokenId}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                  <Link to={`/item/${offer.tokenId}`} style={{ color: 'inherit', textDecoration: 'none' }}>
                     <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '4px' }}>{offer.name}</h3>
                   </Link>
-                  <p style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
-                    {offer.type === 'incoming' ? `Offer from ${offer.offerer.slice(0, 12)}...` : 'Your offer'}
-                  </p>
+                  <p style={{ fontSize: '14px', color: 'var(--text-muted)' }}>Your offer</p>
                 </div>
 
                 {/* Price */}
                 <div style={{ textAlign: 'right' }}>
                   <p style={{ fontSize: '20px', fontWeight: '700' }}>{formatPrice(offer.price, offer.denom)}</p>
-                  <span className={`nft-card-status ${offer.type === 'incoming' ? 'listed' : 'owned'}`}>
-                    {offer.type === 'incoming' ? 'Incoming' : 'Outgoing'}
-                  </span>
+                  <span className="nft-card-status owned">Pending</span>
                 </div>
 
                 {/* Actions */}
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {offer.type === 'incoming' ? (
-                    <>
-                      <button
-                        className="btn btn-primary"
-                        onClick={() => handleAcceptOffer(offer)}
-                        disabled={actionLoading === offer.offerId}
-                      >
-                        Accept
-                      </button>
-                      <button
-                        className="btn btn-secondary"
-                        onClick={() => handleRejectOffer(offer)}
-                        disabled={actionLoading === offer.offerId}
-                      >
-                        Reject
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => handleCancelOffer(offer)}
-                      disabled={actionLoading === offer.offerId}
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => handleCancelOffer(offer)}
+                  disabled={actionLoading === offer.offerId}
+                >
+                  {actionLoading === offer.offerId ? 'Cancelling...' : 'Cancel'}
+                </button>
               </div>
             </div>
           ))}

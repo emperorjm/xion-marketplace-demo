@@ -14,11 +14,8 @@ import { Activity } from './app/pages/Activity';
 export default function App() {
   return (
     <Routes>
-      {/* Developer Console at root */}
-      <Route path="/" element={<ConsoleApp />} />
-
-      {/* User-facing Marketplace UI */}
-      <Route path="/app" element={<Layout />}>
+      {/* User-facing Marketplace UI at root */}
+      <Route path="/" element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="explore" element={<Explore />} />
         <Route path="item/:tokenId" element={<ItemDetail />} />
@@ -29,6 +26,9 @@ export default function App() {
         <Route path="admin" element={<Admin />} />
         <Route path="activity" element={<Activity />} />
       </Route>
+
+      {/* Developer Console */}
+      <Route path="/console" element={<ConsoleApp />} />
     </Routes>
   );
 }

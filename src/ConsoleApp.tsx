@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useCosmos } from './hooks/useCosmos';
 import { ConfigPanel } from './components/ConfigPanel';
 import { WalletPanel } from './components/WalletPanel';
@@ -936,8 +937,23 @@ export function ConsoleApp() {
   return (
     <div className="app-shell">
       <header>
-        <h1>Xion Marketplace Console</h1>
-        <p>Interact with asset + marketplace CosmWasm contracts for testing.</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h1>Xion Marketplace Console</h1>
+            <p>Interact with asset + marketplace CosmWasm contracts for testing.</p>
+          </div>
+          <Link to="/" style={{
+            padding: '8px 16px',
+            background: '#22c55e',
+            color: '#000',
+            borderRadius: '6px',
+            textDecoration: 'none',
+            fontWeight: '500',
+            fontSize: '14px'
+          }}>
+            ← Back to Marketplace
+          </Link>
+        </div>
       </header>
       <main>
       <section className="grid">

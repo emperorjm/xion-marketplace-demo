@@ -23,22 +23,22 @@ export function Dashboard() {
     switch (role) {
       case 'admin':
         return [
-          { label: 'Configure Marketplace', to: '/app/admin', icon: '⚙️' },
-          { label: 'View All Activity', to: '/app/activity', icon: '📊' },
-          { label: 'Manage Listings', to: '/app/listings', icon: '📋' },
+          { label: 'Configure Marketplace', to: '/admin', icon: '⚙️' },
+          { label: 'View All Activity', to: '/activity', icon: '📊' },
+          { label: 'Manage Listings', to: '/listings', icon: '📋' },
         ];
       case 'seller':
         return [
-          { label: 'Create NFT', to: '/app/create', icon: '✨' },
-          { label: 'My Listings', to: '/app/listings', icon: '📋' },
-          { label: 'View Offers', to: '/app/offers', icon: '💰' },
+          { label: 'Create NFT', to: '/create', icon: '✨' },
+          { label: 'My Listings', to: '/listings', icon: '📋' },
+          { label: 'View Offers', to: '/offers', icon: '💰' },
         ];
       case 'buyer':
       default:
         return [
-          { label: 'Explore NFTs', to: '/app/explore', icon: '🔍' },
-          { label: 'My Collection', to: '/app/my-items', icon: '🖼️' },
-          { label: 'Activity', to: '/app/activity', icon: '📜' },
+          { label: 'Explore NFTs', to: '/explore', icon: '🔍' },
+          { label: 'My Collection', to: '/my-items', icon: '🖼️' },
+          { label: 'Activity', to: '/activity', icon: '📜' },
         ];
     }
   };
@@ -176,7 +176,7 @@ export function Dashboard() {
         <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '12px' }}>
           Need low-level contract access?
         </p>
-        <Link to="/" className="btn btn-ghost">
+        <Link to="/console" className="btn btn-ghost">
           Open Developer Console →
         </Link>
       </div>
