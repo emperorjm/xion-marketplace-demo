@@ -54,3 +54,6 @@ coverage/
 # OS
 .DS_Store
 Thumbs.db
+
+# Generated env config (bypasses shell env override)
+src/generated-env.ts

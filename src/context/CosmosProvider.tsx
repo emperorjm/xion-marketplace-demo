@@ -4,6 +4,7 @@ import { GasPrice } from '@cosmjs/stargate';
 import { OfflineSigner } from '@cosmjs/proto-signing';
 import { Coin } from '@cosmjs/amino';
 import { useAbstraxionAccount, useAbstraxionSigningClient } from '@burnt-labs/abstraxion';
+import { ASSET_CONTRACT, MARKETPLACE_CONTRACT } from '../generated-env';
 
 export type WalletType = 'abstraxion' | 'keplr' | null;
 
@@ -53,8 +54,9 @@ const defaultConfig: CosmosConfig = {
   chainId: import.meta.env.VITE_CHAIN_ID || '',
   gasPrice: import.meta.env.VITE_GAS_PRICE || '0.025uxion',
   prefix: import.meta.env.VITE_PREFIX || 'xion',
-  assetContract: import.meta.env.VITE_ASSET_CONTRACT || '',
-  marketplaceContract: import.meta.env.VITE_MARKETPLACE_CONTRACT || '',
+  // Use values from virtual:env-config to bypass shell env override
+  assetContract: ASSET_CONTRACT || '',
+  marketplaceContract: MARKETPLACE_CONTRACT || '',
   defaultDenom: import.meta.env.VITE_DEFAULT_DENOM || 'uxion',
 };
 

@@ -1,6 +1,7 @@
 import './polyfills';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
 import { AbstraxionProvider } from '@burnt-labs/abstraxion';
 import '@burnt-labs/abstraxion/dist/index.css';
 import App from './App';
@@ -13,10 +14,12 @@ const abstraxionConfig = {
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <AbstraxionProvider config={abstraxionConfig}>
-      <CosmosProvider>
-        <App />
-      </CosmosProvider>
-    </AbstraxionProvider>
+    <BrowserRouter>
+      <AbstraxionProvider config={abstraxionConfig}>
+        <CosmosProvider>
+          <App />
+        </CosmosProvider>
+      </AbstraxionProvider>
+    </BrowserRouter>
   </React.StrictMode>,
 );
