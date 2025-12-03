@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { NFTCard } from '../components/NFTCard';
 import { useCosmos } from '../../hooks/useCosmos';
 import { fetchJsonFromUri, extractImageFromMetadata } from '../../lib/helpers';
+import { getListing } from '../store/localStore';
 
 interface NFTItem {
   tokenId: string;
@@ -51,23 +52,31 @@ export function Explore() {
             owner_of: { token_id: tokenId },
           }) as { owner: string };
 
-          // Try to get listing info
+          // Check listing info - localStorage first, then contract
           let isListed = false;
           let price: string | undefined;
           let denom: string | undefined;
 
-          try {
-            const listingInfo = await query(config.assetContract, {
-              extension: { msg: { listing: { token_id: tokenId } } },
-            }) as { price?: { amount: string; denom: string } };
+          const localListing = getListing(tokenId);
+          if (localListing) {
+            isListed = true;
+            price = localListing.price;
+            denom = localListing.denom;
+          } else {
+            // Fall back to contract query
+            try {
+              const listingInfo = await query(config.assetContract, {
+                extension: { msg: { listing: { token_id: tokenId } } },
+              }) as { price?: { amount: string; denom: string } };
 
-            if (listingInfo?.price) {
-              isListed = true;
-              price = listingInfo.price.amount;
-              denom = listingInfo.price.denom;
+              if (listingInfo?.price) {
+                isListed = true;
+                price = listingInfo.price.amount;
+                denom = listingInfo.price.denom;
+              }
+            } catch {
+              // Not listed or extension doesn't support listing query
             }
-          } catch {
-            // Not listed or extension doesn't support listing query
           }
 
           // Get metadata

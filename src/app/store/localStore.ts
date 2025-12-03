@@ -20,12 +20,20 @@ export interface Listing {
   createdAt: number;
 }
 
+export interface ListingInfo {
+  tokenId: string;
+  price: string;
+  denom: string;
+  listedAt: number;
+}
+
 export interface LocalStore {
   currentRole: UserRole;
   mockMode: boolean;
   nftMetadataCache: Record<string, NFTItem>;
   recentActivity: ActivityItem[];
   feesConfigured?: boolean;
+  listings?: Record<string, ListingInfo>;
 }
 
 export interface ActivityItem {
@@ -128,4 +136,31 @@ export function setFeesConfigured(value: boolean): void {
 
 export function getFeesConfigured(): boolean {
   return getStore().feesConfigured ?? false;
+}
+
+// Listing tracking
+export function addListing(tokenId: string, price: string, denom: string): void {
+  const store = getStore();
+  setStore({
+    listings: {
+      ...store.listings,
+      [tokenId]: { tokenId, price, denom, listedAt: Date.now() },
+    },
+  });
+}
+
+export function removeListing(tokenId: string): void {
+  const store = getStore();
+  const listings = { ...store.listings };
+  delete listings[tokenId];
+  setStore({ listings });
+}
+
+export function getListing(tokenId: string): ListingInfo | undefined {
+  return getStore().listings?.[tokenId];
+}
+
+export function getAllListings(): ListingInfo[] {
+  const listings = getStore().listings || {};
+  return Object.values(listings);
 }

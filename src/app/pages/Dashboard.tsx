@@ -52,13 +52,18 @@ export function Dashboard() {
           { step: 3, title: 'Set Fees', description: 'Configure marketplace fees and listing denom', done: getFeesConfigured() },
           { step: 4, title: 'Monitor Activity', description: 'Track sales, listings, and offers', done: getRecentActivity().length > 0 },
         ];
-      case 'seller':
+      case 'seller': {
+        const activities = getRecentActivity();
+        const hasMinted = activities.some(a => a.type === 'mint');
+        const hasListed = activities.some(a => a.type === 'list');
+        const hasSold = activities.some(a => a.type === 'buy' || a.type === 'accept_offer');
         return [
           { step: 1, title: 'Connect Wallet', description: 'Connect your wallet to start selling', done: isConnected },
-          { step: 2, title: 'Create NFT', description: 'Mint a new NFT in your collection', done: false },
-          { step: 3, title: 'List for Sale', description: 'Set a price and list your NFT', done: false },
-          { step: 4, title: 'Complete Sale', description: 'Accept offers or wait for buyers', done: false },
+          { step: 2, title: 'Create NFT', description: 'Mint a new NFT in your collection', done: hasMinted },
+          { step: 3, title: 'List for Sale', description: 'Set a price and list your NFT', done: hasListed },
+          { step: 4, title: 'Complete Sale', description: 'Accept offers or wait for buyers', done: hasSold },
         ];
+      }
       case 'buyer':
       default:
         return [

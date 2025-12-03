@@ -147,7 +147,7 @@ export function Activity() {
                 {/* Tx Link */}
                 {activity.txHash && (
                   <a
-                    href={`https://explorer.burnt.com/xion-testnet-1/tx/${activity.txHash}`}
+                    href={`https://www.mintscan.io/xion-testnet/tx/${activity.txHash}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="btn btn-secondary"

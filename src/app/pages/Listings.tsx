@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { NFTCard } from '../components/NFTCard';
 import { useCosmos } from '../../hooks/useCosmos';
-import { fetchJsonFromUri, extractImageFromMetadata, buildCoin } from '../../lib/helpers';
-import { addActivity } from '../store/localStore';
+import { fetchJsonFromUri, extractImageFromMetadata } from '../../lib/helpers';
+import { addActivity, removeListing, getListing } from '../store/localStore';
 
 interface ListedNFT {
   tokenId: string;
@@ -36,12 +36,10 @@ export function Listings() {
 
       for (const tokenId of tokens) {
         try {
-          // Check if listed
-          const listingInfo = await query(config.assetContract, {
-            extension: { msg: { listing: { token_id: tokenId } } },
-          }) as { price?: { amount: string; denom: string } };
+          // Check localStorage first for listing info
+          const localListing = getListing(tokenId);
 
-          if (listingInfo?.price) {
+          if (localListing) {
             // Get NFT metadata
             const nftInfo = await query(config.assetContract, {
               nft_info: { token_id: tokenId },
@@ -64,9 +62,42 @@ export function Listings() {
               tokenId,
               name,
               image,
-              price: listingInfo.price.amount,
-              denom: listingInfo.price.denom,
+              price: localListing.price,
+              denom: localListing.denom,
             });
+          } else {
+            // Fall back to contract query
+            const listingInfo = await query(config.assetContract, {
+              extension: { msg: { listing: { token_id: tokenId } } },
+            }) as { price?: { amount: string; denom: string } };
+
+            if (listingInfo?.price) {
+              // Get NFT metadata
+              const nftInfo = await query(config.assetContract, {
+                nft_info: { token_id: tokenId },
+              }) as { token_uri?: string; extension?: { name?: string; image?: string } };
+
+              let name = nftInfo.extension?.name || `Token #${tokenId}`;
+              let image = nftInfo.extension?.image;
+
+              if (nftInfo.token_uri && !image) {
+                try {
+                  const metadata = await fetchJsonFromUri(nftInfo.token_uri);
+                  name = metadata.name || name;
+                  image = extractImageFromMetadata(metadata);
+                } catch {
+                  // Ignore
+                }
+              }
+
+              listedNfts.push({
+                tokenId,
+                name,
+                image,
+                price: listingInfo.price.amount,
+                denom: listingInfo.price.denom,
+              });
+            }
           }
         } catch {
           // Not listed or error
@@ -90,6 +121,9 @@ export function Listings() {
   }, [isConnected, loadMyListings]);
 
   const handleDelist = async (tokenId: string) => {
+    const confirmed = window.confirm(`Are you sure you want to delist Token #${tokenId}?`);
+    if (!confirmed) return;
+
     setActionLoading(tokenId);
     try {
       const msg = {
@@ -106,43 +140,14 @@ export function Listings() {
         txHash: result.transactionHash,
       });
 
+      // Clear listing from localStorage
+      removeListing(tokenId);
+
+      alert(`Successfully delisted Token #${tokenId}`);
       loadMyListings();
     } catch (err) {
       console.error('Error delisting:', err);
       alert(err instanceof Error ? err.message : 'Failed to delist');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleUpdatePrice = async (tokenId: string, newPrice: string) => {
-    const priceInMicro = (parseFloat(newPrice) * 1_000_000).toString();
-    setActionLoading(tokenId);
-    try {
-      const msg = {
-        update_extension: {
-          msg: {
-            update_listing: {
-              token_id: tokenId,
-              price: buildCoin(priceInMicro, config.defaultDenom),
-            },
-          },
-        },
-      };
-      const result = await execute(config.assetContract, msg);
-
-      addActivity({
-        type: 'price_update',
-        tokenId,
-        from: address,
-        price: priceInMicro,
-        txHash: result.transactionHash,
-      });
-
-      loadMyListings();
-    } catch (err) {
-      console.error('Error updating price:', err);
-      alert(err instanceof Error ? err.message : 'Failed to update price');
     } finally {
       setActionLoading(null);
     }
@@ -207,27 +212,14 @@ export function Listings() {
                 <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '12px' }}>
                   Listed at {formatPrice(nft.price, nft.denom)}
                 </p>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    className="btn btn-secondary"
-                    style={{ flex: 1 }}
-                    onClick={() => {
-                      const newPrice = prompt('Enter new price:');
-                      if (newPrice) handleUpdatePrice(nft.tokenId, newPrice);
-                    }}
-                    disabled={actionLoading === nft.tokenId}
-                  >
-                    Update Price
-                  </button>
-                  <button
-                    className="btn btn-secondary"
-                    style={{ flex: 1 }}
-                    onClick={() => handleDelist(nft.tokenId)}
-                    disabled={actionLoading === nft.tokenId}
-                  >
-                    {actionLoading === nft.tokenId ? 'Delisting...' : 'Delist'}
-                  </button>
-                </div>
+                <button
+                  className="btn btn-secondary"
+                  style={{ width: '100%' }}
+                  onClick={() => handleDelist(nft.tokenId)}
+                  disabled={actionLoading === nft.tokenId}
+                >
+                  {actionLoading === nft.tokenId ? 'Delisting...' : 'Delist'}
+                </button>
               </div>
             </div>
           ))}

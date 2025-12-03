@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useCosmos } from '../../hooks/useCosmos';
 import { useRole } from '../hooks/useLocalStore';
 import { fetchJsonFromUri, extractImageFromMetadata, buildCoin } from '../../lib/helpers';
-import { addActivity } from '../store/localStore';
+import { addActivity, addListing, getListing, removeListing } from '../store/localStore';
 
 interface NFTDetails {
   tokenId: string;
@@ -43,18 +43,27 @@ export function ItemDetail() {
       let price: string | undefined;
       let denom: string | undefined;
 
-      try {
-        const listingInfo = await query(config.assetContract, {
-          extension: { msg: { listing: { token_id: tokenId } } },
-        }) as { price?: { amount: string; denom: string } };
+      // Check localStorage first for listing info
+      const localListing = getListing(tokenId);
+      if (localListing) {
+        isListed = true;
+        price = localListing.price;
+        denom = localListing.denom;
+      } else {
+        // Try contract query as fallback
+        try {
+          const listingInfo = await query(config.assetContract, {
+            extension: { msg: { listing: { token_id: tokenId } } },
+          }) as { price?: { amount: string; denom: string } };
 
-        if (listingInfo?.price) {
-          isListed = true;
-          price = listingInfo.price.amount;
-          denom = listingInfo.price.denom;
+          if (listingInfo?.price) {
+            isListed = true;
+            price = listingInfo.price.amount;
+            denom = listingInfo.price.denom;
+          }
+        } catch {
+          // Not listed
         }
-      } catch {
-        // Not listed
       }
 
       let name = nftInfo.extension?.name || `Token #${tokenId}`;
@@ -93,8 +102,16 @@ export function ItemDetail() {
     loadNFT();
   }, [loadNFT]);
 
+  const formatPrice = (amount: string, denomination: string) => {
+    const num = parseFloat(amount) / 1_000_000;
+    return `${num.toLocaleString()} ${denomination.replace('u', '').toUpperCase()}`;
+  };
+
   const handleBuy = async () => {
     if (!nft?.isListed || !nft.price || !nft.denom) return;
+
+    const confirmed = window.confirm(`Buy "${nft.name}" for ${formatPrice(nft.price, nft.denom)}?`);
+    if (!confirmed) return;
 
     setActionLoading(true);
     try {
@@ -115,7 +132,19 @@ export function ItemDetail() {
         txHash: result.transactionHash,
       });
 
-      loadNFT();
+      // Clear listing from localStorage after successful purchase
+      removeListing(tokenId!);
+
+      // Directly update state to show correct ownership and status
+      setNft({
+        ...nft,
+        isListed: false,
+        price: undefined,
+        denom: undefined,
+        owner: address!,
+      });
+
+      alert(`Successfully purchased "${nft.name}"!`);
     } catch (err) {
       console.error('Error buying:', err);
       alert(err instanceof Error ? err.message : 'Failed to buy');
@@ -150,22 +179,34 @@ export function ItemDetail() {
         txHash: result.transactionHash,
       });
 
+      // Store listing in localStorage for immediate UI update
+      addListing(tokenId!, priceInMicro, config.defaultDenom);
+
       setShowListModal(false);
       setListPrice('');
+      alert(`Successfully listed for ${listPrice} ${config.defaultDenom.replace('u', '').toUpperCase()}!`);
       loadNFT();
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+
+      // If listing already exists on-chain, sync it to localStorage
+      if (errorMsg.includes('Listing already exists')) {
+        const priceInMicro = (parseFloat(listPrice) * 1_000_000).toString();
+        addListing(tokenId!, priceInMicro, config.defaultDenom);
+        setShowListModal(false);
+        setListPrice('');
+        loadNFT();
+        return;
+      }
+
       console.error('Error listing:', err);
-      alert(err instanceof Error ? err.message : 'Failed to list');
+      alert(errorMsg);
     } finally {
       setActionLoading(false);
     }
   };
 
   const isOwner = nft?.owner === address;
-  const formatPrice = (amount: string, denomination: string) => {
-    const num = parseFloat(amount) / 1_000_000;
-    return `${num.toLocaleString()} ${denomination.replace('u', '').toUpperCase()}`;
-  };
 
   if (loading) {
     return (
