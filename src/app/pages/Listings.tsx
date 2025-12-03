@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { NFTCard } from '../components/NFTCard';
 import { useCosmos } from '../../hooks/useCosmos';
 import { fetchJsonFromUri, extractImageFromMetadata } from '../../lib/helpers';
-import { addActivity, removeListing, getListing } from '../store/localStore';
+import { addActivity, removeListing } from '../store/localStore';
 
 interface ListedNFT {
   tokenId: string;
@@ -26,6 +26,34 @@ export function Listings() {
 
     setLoading(true);
     try {
+      // Fetch all listings from blockchain
+      const listingsMap = new Map<string, { price: string; denom: string }>();
+      try {
+        const listingsResult = await query(config.assetContract, {
+          extension: {
+            msg: {
+              get_all_listings: {
+                start_after: undefined,
+                limit: 100,
+              },
+            },
+          },
+        }) as Array<{ id: string; price?: { amount: string; denom: string } }>;
+
+        if (Array.isArray(listingsResult)) {
+          listingsResult.forEach((listing) => {
+            if (listing?.id && listing?.price) {
+              listingsMap.set(listing.id, {
+                price: listing.price.amount,
+                denom: listing.price.denom,
+              });
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('Could not fetch listings from contract:', err);
+      }
+
       // Get tokens owned by user
       const tokensResult = await query(config.assetContract, {
         tokens: { owner: address, limit: 100 },
@@ -36,10 +64,10 @@ export function Listings() {
 
       for (const tokenId of tokens) {
         try {
-          // Check localStorage first for listing info
-          const localListing = getListing(tokenId);
+          // Check if this token is listed (from blockchain data)
+          const listing = listingsMap.get(tokenId);
 
-          if (localListing) {
+          if (listing) {
             // Get NFT metadata
             const nftInfo = await query(config.assetContract, {
               nft_info: { token_id: tokenId },
@@ -62,45 +90,12 @@ export function Listings() {
               tokenId,
               name,
               image,
-              price: localListing.price,
-              denom: localListing.denom,
+              price: listing.price,
+              denom: listing.denom,
             });
-          } else {
-            // Fall back to contract query
-            const listingInfo = await query(config.assetContract, {
-              extension: { msg: { listing: { token_id: tokenId } } },
-            }) as { price?: { amount: string; denom: string } };
-
-            if (listingInfo?.price) {
-              // Get NFT metadata
-              const nftInfo = await query(config.assetContract, {
-                nft_info: { token_id: tokenId },
-              }) as { token_uri?: string; extension?: { name?: string; image?: string } };
-
-              let name = nftInfo.extension?.name || `Token #${tokenId}`;
-              let image = nftInfo.extension?.image;
-
-              if (nftInfo.token_uri && !image) {
-                try {
-                  const metadata = await fetchJsonFromUri(nftInfo.token_uri);
-                  name = metadata.name || name;
-                  image = extractImageFromMetadata(metadata);
-                } catch {
-                  // Ignore
-                }
-              }
-
-              listedNfts.push({
-                tokenId,
-                name,
-                image,
-                price: listingInfo.price.amount,
-                denom: listingInfo.price.denom,
-              });
-            }
           }
         } catch {
-          // Not listed or error
+          // Error loading token
         }
       }
 

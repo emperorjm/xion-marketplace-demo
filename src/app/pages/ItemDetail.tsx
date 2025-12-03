@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useCosmos } from '../../hooks/useCosmos';
 import { useRole } from '../hooks/useLocalStore';
 import { fetchJsonFromUri, extractImageFromMetadata, buildCoin } from '../../lib/helpers';
-import { addActivity, addListing, getListing, removeListing, addOffer, removeOffer, getOffersByToken } from '../store/localStore';
+import { addActivity, addListing, removeListing, addOffer, removeOffer, getOffersByToken } from '../store/localStore';
 
 interface NFTDetails {
   tokenId: string;
@@ -53,27 +53,27 @@ export function ItemDetail() {
       let price: string | undefined;
       let denom: string | undefined;
 
-      // Check localStorage first for listing info
-      const localListing = getListing(tokenId);
-      if (localListing) {
-        isListed = true;
-        price = localListing.price;
-        denom = localListing.denom;
-      } else {
-        // Try contract query as fallback
-        try {
-          const listingInfo = await query(config.assetContract, {
-            extension: { msg: { listing: { token_id: tokenId } } },
-          }) as { price?: { amount: string; denom: string } };
+      // Query all listings from blockchain and find this token
+      try {
+        const listingsResult = await query(config.assetContract, {
+          extension: {
+            msg: {
+              get_all_listings: {
+                start_after: undefined,
+                limit: 100,
+              },
+            },
+          },
+        }) as Array<{ id: string; price?: { amount: string; denom: string } }>;
 
-          if (listingInfo?.price) {
-            isListed = true;
-            price = listingInfo.price.amount;
-            denom = listingInfo.price.denom;
-          }
-        } catch {
-          // Not listed
+        const listing = listingsResult?.find(l => l.id === tokenId);
+        if (listing?.price) {
+          isListed = true;
+          price = listing.price.amount;
+          denom = listing.price.denom;
         }
+      } catch {
+        // Unable to fetch listings
       }
 
       let name = nftInfo.extension?.name || `Token #${tokenId}`;

@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { NFTCard } from '../components/NFTCard';
 import { useCosmos } from '../../hooks/useCosmos';
 import { fetchJsonFromUri, extractImageFromMetadata } from '../../lib/helpers';
-import { getListing } from '../store/localStore';
 
 interface NFTItem {
   tokenId: string;
@@ -32,6 +31,34 @@ export function Explore() {
     setError(null);
 
     try {
+      // Fetch all listings from blockchain first
+      const listingsMap = new Map<string, { price: string; denom: string }>();
+      try {
+        const listingsResult = await query(config.assetContract, {
+          extension: {
+            msg: {
+              get_all_listings: {
+                start_after: undefined,
+                limit: 100,
+              },
+            },
+          },
+        }) as Array<{ id: string; price?: { amount: string; denom: string } }>;
+
+        if (Array.isArray(listingsResult)) {
+          listingsResult.forEach((listing) => {
+            if (listing?.id && listing?.price) {
+              listingsMap.set(listing.id, {
+                price: listing.price.amount,
+                denom: listing.price.denom,
+              });
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('Could not fetch listings from contract:', err);
+      }
+
       // Query all tokens from the asset contract
       const tokensResult = await query(config.assetContract, {
         all_tokens: { limit: 100 },
@@ -52,31 +79,16 @@ export function Explore() {
             owner_of: { token_id: tokenId },
           }) as { owner: string };
 
-          // Check listing info - localStorage first, then contract
+          // Check listing info from blockchain data
           let isListed = false;
           let price: string | undefined;
           let denom: string | undefined;
 
-          const localListing = getListing(tokenId);
-          if (localListing) {
+          const listing = listingsMap.get(tokenId);
+          if (listing) {
             isListed = true;
-            price = localListing.price;
-            denom = localListing.denom;
-          } else {
-            // Fall back to contract query
-            try {
-              const listingInfo = await query(config.assetContract, {
-                extension: { msg: { listing: { token_id: tokenId } } },
-              }) as { price?: { amount: string; denom: string } };
-
-              if (listingInfo?.price) {
-                isListed = true;
-                price = listingInfo.price.amount;
-                denom = listingInfo.price.denom;
-              }
-            } catch {
-              // Not listed or extension doesn't support listing query
-            }
+            price = listing.price;
+            denom = listing.denom;
           }
 
           // Get metadata
