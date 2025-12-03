@@ -101,14 +101,14 @@ export function Dashboard() {
         </div>
         <div className="stat-card">
           <div className="stat-label">Asset Contract</div>
-          <div className="stat-value" style={{ fontSize: '16px' }}>
-            {config.assetContract ? `${config.assetContract.slice(0, 12)}...` : 'Not Set'}
+          <div className="stat-value" style={{ fontSize: '14px', wordBreak: 'break-all' }}>
+            {config.assetContract || 'Not Set'}
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Marketplace Contract</div>
-          <div className="stat-value" style={{ fontSize: '16px' }}>
-            {config.marketplaceContract ? `${config.marketplaceContract.slice(0, 12)}...` : 'Not Set'}
+          <div className="stat-value" style={{ fontSize: '14px', wordBreak: 'break-all' }}>
+            {config.marketplaceContract || 'Not Set'}
           </div>
         </div>
       </div>
