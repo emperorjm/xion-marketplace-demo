@@ -66,7 +66,7 @@ export function NFTCard({
   }
 
   return (
-    <Link to={`/app/item/${tokenId}`} className="nft-card" style={{ textDecoration: 'none' }}>
+    <Link to={`/item/${tokenId}`} className="nft-card" style={{ textDecoration: 'none' }}>
       {content}
     </Link>
   );
