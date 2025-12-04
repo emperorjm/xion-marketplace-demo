@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { CosmWasmClient, SigningCosmWasmClient } from '@cosmjs/cosmwasm-stargate';
+import { CosmWasmClient } from '@cosmjs/cosmwasm-stargate';
 import { Coin } from '@cosmjs/amino';
 import { useAbstraxionAccount, useAbstraxionSigningClient } from '@burnt-labs/abstraxion';
 import { ASSET_CONTRACT, MARKETPLACE_CONTRACT } from '../generated-env';

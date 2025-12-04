@@ -397,54 +397,69 @@ export function Dashboard() {
           <div className="card-body" style={{ padding: 0 }}>
             {getFlowSteps().map((item, index) => {
               const isExpanded = expandedStep === item.step && item.expandable;
-              const StepWrapper = item.link && !item.expandable ? Link : 'div';
-              const wrapperProps = item.link && !item.expandable ? { to: item.link } : {};
+              const isLink = item.link && !item.expandable;
+              const stepStyle = {
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '16px',
+                padding: '20px',
+                borderBottom: (index < getFlowSteps().length - 1 && !isExpanded) ? '1px solid var(--border-color)' : 'none',
+                cursor: item.expandable || item.link ? 'pointer' : 'default',
+                textDecoration: 'none',
+                color: 'inherit',
+              } as const;
+
+              const stepContent = (
+                <>
+                  <div
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '50%',
+                      background: item.done ? 'var(--accent-green)' : 'var(--bg-secondary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: '600',
+                      fontSize: '14px',
+                      color: item.done ? '#000' : 'var(--text-secondary)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {item.done ? '✓' : item.step}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: '500', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {item.title}
+                      {item.expandable && !item.done && (
+                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          {isExpanded ? '▼' : '▶'}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>{item.description}</div>
+                  </div>
+                </>
+              );
 
               return (
                 <div key={item.step}>
-                  <StepWrapper
-                    {...wrapperProps}
-                    onClick={() => handleStepClick(item.step, item.expandable || false, item.link)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: '16px',
-                      padding: '20px',
-                      borderBottom: (index < getFlowSteps().length - 1 && !isExpanded) ? '1px solid var(--border-color)' : 'none',
-                      cursor: item.expandable || item.link ? 'pointer' : 'default',
-                      textDecoration: 'none',
-                      color: 'inherit',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '50%',
-                        background: item.done ? 'var(--accent-green)' : 'var(--bg-secondary)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: '600',
-                        fontSize: '14px',
-                        color: item.done ? '#000' : 'var(--text-secondary)',
-                        flexShrink: 0,
-                      }}
+                  {isLink ? (
+                    <Link
+                      to={item.link!}
+                      onClick={() => handleStepClick(item.step, item.expandable || false, item.link)}
+                      style={stepStyle}
                     >
-                      {item.done ? '✓' : item.step}
+                      {stepContent}
+                    </Link>
+                  ) : (
+                    <div
+                      onClick={() => handleStepClick(item.step, item.expandable || false, item.link)}
+                      style={stepStyle}
+                    >
+                      {stepContent}
                     </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: '500', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {item.title}
-                        {item.expandable && !item.done && (
-                          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                            {isExpanded ? '▼' : '▶'}
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>{item.description}</div>
-                    </div>
-                  </StepWrapper>
+                  )}
                   {isExpanded && item.step === 2 && role === 'admin' && renderDeployContractsForm()}
                   {isExpanded && index < getFlowSteps().length - 1 && (
                     <div style={{ borderBottom: '1px solid var(--border-color)' }} />
