@@ -4,17 +4,144 @@ import { useRole } from '../hooks/useLocalStore';
 import { addActivity, setFeesConfigured } from '../store/localStore';
 
 export function Admin() {
-  const { config, execute, query, address, isConnected } = useCosmos();
+  const { config, updateConfig, execute, query, instantiate, address, isConnected } = useCosmos();
   const { role } = useRole();
   const [loading, setLoading] = useState<string | null>(null);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  // Form states
+  // Form states for existing features
   const [newMinter, setNewMinter] = useState('');
   const [feePercent, setFeePercent] = useState('');
   const [feeRecipient, setFeeRecipient] = useState('');
   const [useCustomAcceptContract, setUseCustomAcceptContract] = useState(false);
   const [customAcceptContract, setCustomAcceptContract] = useState('');
+
+  // Form states for Asset Contract instantiation
+  const [assetCodeId, setAssetCodeId] = useState('');
+  const [assetLabel, setAssetLabel] = useState('');
+  const [assetName, setAssetName] = useState('');
+  const [assetSymbol, setAssetSymbol] = useState('');
+  const [assetAdmin, setAssetAdmin] = useState('');
+  const [assetMinter, setAssetMinter] = useState('');
+
+  // Form states for Marketplace Contract instantiation
+  const [marketplaceCodeId, setMarketplaceCodeId] = useState('');
+  const [marketplaceLabel, setMarketplaceLabel] = useState('');
+  const [marketplaceAdmin, setMarketplaceAdmin] = useState('');
+  const [marketplaceFeeRecipient, setMarketplaceFeeRecipient] = useState('');
+  const [marketplaceFeeBps, setMarketplaceFeeBps] = useState('200');
+  const [marketplaceListingDenom, setMarketplaceListingDenom] = useState('uxion');
+
+  const handleInstantiateAsset = async () => {
+    if (!assetCodeId || !assetLabel || !assetName || !assetSymbol) {
+      setResult({ success: false, message: 'Please fill in all required fields' });
+      return;
+    }
+
+    setLoading('instantiate-asset');
+    setResult(null);
+    try {
+      const msg = {
+        name: assetName,
+        symbol: assetSymbol,
+        collection_info_extension: {},
+        minter: assetMinter || address || undefined,
+        creator: address || undefined,
+        withdraw_address: undefined,
+      };
+
+      const res = await instantiate(
+        parseInt(assetCodeId),
+        msg,
+        assetLabel,
+        { admin: assetAdmin || undefined }
+      );
+
+      // Update config with new contract address
+      updateConfig({ assetContract: res.contractAddress });
+
+      addActivity({
+        type: 'admin',
+        tokenId: 'system',
+        from: address,
+        txHash: res.transactionHash,
+        description: 'Instantiated Asset Contract',
+      });
+
+      setResult({
+        success: true,
+        message: `Asset contract deployed!\n\nAddress: ${res.contractAddress}\nTx: ${res.transactionHash}`,
+      });
+
+      // Clear form
+      setAssetCodeId('');
+      setAssetLabel('');
+      setAssetName('');
+      setAssetSymbol('');
+      setAssetAdmin('');
+      setAssetMinter('');
+    } catch (err) {
+      setResult({ success: false, message: err instanceof Error ? err.message : 'Failed to instantiate asset contract' });
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleInstantiateMarketplace = async () => {
+    if (!marketplaceCodeId || !marketplaceLabel || !marketplaceFeeRecipient) {
+      setResult({ success: false, message: 'Please fill in all required fields' });
+      return;
+    }
+
+    setLoading('instantiate-marketplace');
+    setResult(null);
+    try {
+      const msg = {
+        config: {
+          manager: address,
+          fee_recipient: marketplaceFeeRecipient,
+          fee_bps: parseInt(marketplaceFeeBps) || 200,
+          sale_approvals: false,
+          listing_denom: marketplaceListingDenom || 'uxion',
+        },
+      };
+
+      const res = await instantiate(
+        parseInt(marketplaceCodeId),
+        msg,
+        marketplaceLabel,
+        { admin: marketplaceAdmin || undefined }
+      );
+
+      // Update config with new contract address
+      updateConfig({ marketplaceContract: res.contractAddress });
+
+      addActivity({
+        type: 'admin',
+        tokenId: 'system',
+        from: address,
+        txHash: res.transactionHash,
+        description: 'Instantiated Marketplace Contract',
+      });
+
+      setResult({
+        success: true,
+        message: `Marketplace contract deployed!\n\nAddress: ${res.contractAddress}\nTx: ${res.transactionHash}`,
+      });
+
+      // Clear form
+      setMarketplaceCodeId('');
+      setMarketplaceLabel('');
+      setMarketplaceAdmin('');
+      setMarketplaceFeeRecipient('');
+      setMarketplaceFeeBps('200');
+      setMarketplaceListingDenom('uxion');
+    } catch (err) {
+      setResult({ success: false, message: err instanceof Error ? err.message : 'Failed to instantiate marketplace contract' });
+    } finally {
+      setLoading(null);
+    }
+  };
 
   const handleAcceptMinterOwnership = async () => {
     setLoading('accept-minter');
@@ -203,6 +330,190 @@ export function Admin() {
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px' }}>
+        {/* Deploy Contracts */}
+        <div className="card">
+          <div className="card-body">
+            <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '16px' }}>Deploy Contracts</h3>
+
+            {/* Instantiate Asset Contract */}
+            <div style={{
+              background: 'rgba(255,255,255,0.03)',
+              borderRadius: '8px',
+              padding: '16px',
+              marginBottom: '16px'
+            }}>
+              <div style={{ fontSize: '14px', fontWeight: '500', marginBottom: '4px' }}>Instantiate Asset Contract</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                Deploy a new NFT collection contract
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label className="form-label" style={{ fontSize: '12px' }}>Code ID *</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  value={assetCodeId}
+                  onChange={(e) => setAssetCodeId(e.target.value)}
+                  placeholder="e.g., 1813"
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label className="form-label" style={{ fontSize: '12px' }}>Label *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={assetLabel}
+                  onChange={(e) => setAssetLabel(e.target.value)}
+                  placeholder="My NFT Collection"
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '12px' }}>Collection Name *</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={assetName}
+                    onChange={(e) => setAssetName(e.target.value)}
+                    placeholder="XION Demo NFTs"
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '12px' }}>Symbol *</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={assetSymbol}
+                    onChange={(e) => setAssetSymbol(e.target.value)}
+                    placeholder="XDEMO"
+                  />
+                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label className="form-label" style={{ fontSize: '12px' }}>Admin Address (optional)</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={assetAdmin}
+                  onChange={(e) => setAssetAdmin(e.target.value)}
+                  placeholder="xion1..."
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label className="form-label" style={{ fontSize: '12px' }}>Minter Address (optional, defaults to you)</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={assetMinter}
+                  onChange={(e) => setAssetMinter(e.target.value)}
+                  placeholder={address}
+                />
+              </div>
+
+              <button
+                className="btn btn-primary"
+                onClick={handleInstantiateAsset}
+                disabled={loading === 'instantiate-asset' || !assetCodeId || !assetLabel || !assetName || !assetSymbol}
+                style={{ width: '100%' }}
+              >
+                {loading === 'instantiate-asset' ? 'Deploying...' : 'Deploy Asset Contract'}
+              </button>
+            </div>
+
+            {/* Instantiate Marketplace Contract */}
+            <div style={{
+              background: 'rgba(255,255,255,0.03)',
+              borderRadius: '8px',
+              padding: '16px'
+            }}>
+              <div style={{ fontSize: '14px', fontWeight: '500', marginBottom: '4px' }}>Instantiate Marketplace Contract</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                Deploy a new marketplace contract
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label className="form-label" style={{ fontSize: '12px' }}>Code ID *</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  value={marketplaceCodeId}
+                  onChange={(e) => setMarketplaceCodeId(e.target.value)}
+                  placeholder="e.g., 1814"
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label className="form-label" style={{ fontSize: '12px' }}>Label *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={marketplaceLabel}
+                  onChange={(e) => setMarketplaceLabel(e.target.value)}
+                  placeholder="My Marketplace"
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label className="form-label" style={{ fontSize: '12px' }}>Admin Address (optional)</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={marketplaceAdmin}
+                  onChange={(e) => setMarketplaceAdmin(e.target.value)}
+                  placeholder="xion1..."
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label className="form-label" style={{ fontSize: '12px' }}>Fee Recipient *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={marketplaceFeeRecipient}
+                  onChange={(e) => setMarketplaceFeeRecipient(e.target.value)}
+                  placeholder="xion1..."
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '12px' }}>Fee BPS (100 = 1%)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={marketplaceFeeBps}
+                    onChange={(e) => setMarketplaceFeeBps(e.target.value)}
+                    placeholder="200"
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '12px' }}>Listing Denom</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={marketplaceListingDenom}
+                    onChange={(e) => setMarketplaceListingDenom(e.target.value)}
+                    placeholder="uxion"
+                  />
+                </div>
+              </div>
+
+              <button
+                className="btn btn-primary"
+                onClick={handleInstantiateMarketplace}
+                disabled={loading === 'instantiate-marketplace' || !marketplaceCodeId || !marketplaceLabel || !marketplaceFeeRecipient}
+                style={{ width: '100%' }}
+              >
+                {loading === 'instantiate-marketplace' ? 'Deploying...' : 'Deploy Marketplace Contract'}
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Minter Ownership */}
         <div className="card">
           <div className="card-body">
