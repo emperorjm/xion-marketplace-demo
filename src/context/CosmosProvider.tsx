@@ -1,12 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { CosmWasmClient, SigningCosmWasmClient } from '@cosmjs/cosmwasm-stargate';
-import { GasPrice } from '@cosmjs/stargate';
-import { OfflineSigner } from '@cosmjs/proto-signing';
 import { Coin } from '@cosmjs/amino';
 import { useAbstraxionAccount, useAbstraxionSigningClient } from '@burnt-labs/abstraxion';
 import { ASSET_CONTRACT, MARKETPLACE_CONTRACT } from '../generated-env';
-
-export type WalletType = 'abstraxion' | 'keplr' | null;
 
 export interface CosmosConfig {
   rpcEndpoint: string;
@@ -25,9 +21,7 @@ export interface CosmosContextValue {
   isConnected: boolean;
   loading: boolean;
   error: string | null;
-  walletType: WalletType;
   connectAbstraxion: () => void;
-  connectKeplr: () => Promise<void>;
   disconnect: () => void;
   execute: (
     contract: string,
@@ -62,47 +56,20 @@ const defaultConfig: CosmosConfig = {
 
 const CosmosContext = createContext<CosmosContextValue | undefined>(undefined);
 
-declare global {
-  interface Window {
-    keplr?: {
-      enable: (chainId: string) => Promise<void>;
-      getOfflineSignerAuto: (chainId: string) => Promise<OfflineSigner>;
-    };
-  }
-}
-
 export const CosmosProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   const [config, setConfig] = useState<CosmosConfig>(defaultConfig);
-  const [keplrSigningClient, setKeplrSigningClient] = useState<SigningCosmWasmClient | null>(null);
   const [queryClient, setQueryClient] = useState<CosmWasmClient | null>(null);
-  const [keplrAddress, setKeplrAddress] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [walletType, setWalletType] = useState<WalletType>(null);
+  const [loading] = useState(false);
+  const [error] = useState<string | null>(null);
 
   // Abstraxion hooks
   const { data: abstraxionAccount, isConnected: isAbstraxionConnected } = useAbstraxionAccount();
   const { client: abstraxionClient, logout: abstraxionLogout } = useAbstraxionSigningClient();
 
-  // Determine active address and client based on wallet type
-  const address = walletType === 'abstraxion'
-    ? (abstraxionAccount?.bech32Address || '')
-    : keplrAddress;
-
-  const signingClient = walletType === 'abstraxion'
-    ? abstraxionClient
-    : keplrSigningClient;
-
-  const isConnected = walletType === 'abstraxion'
-    ? isAbstraxionConnected && Boolean(abstraxionClient)
-    : Boolean(keplrSigningClient && keplrAddress);
-
-  // Auto-detect Abstraxion connection
-  useEffect(() => {
-    if (isAbstraxionConnected && abstraxionClient && walletType !== 'keplr') {
-      setWalletType('abstraxion');
-    }
-  }, [isAbstraxionConnected, abstraxionClient, walletType]);
+  // Determine active address and client from Abstraxion
+  const address = abstraxionAccount?.bech32Address || '';
+  const signingClient = abstraxionClient;
+  const isConnected = isAbstraxionConnected && Boolean(abstraxionClient);
 
   useEffect(() => {
     setQueryClient(null);
@@ -112,58 +79,13 @@ export const CosmosProvider: React.FC<React.PropsWithChildren> = ({ children }) 
     setConfig((prev) => ({ ...prev, ...patch }));
   }, []);
 
-  const connectWithSigner = useCallback(
-    async (signer: OfflineSigner) => {
-      setLoading(true);
-      setError(null);
-      try {
-        if (!config.rpcEndpoint || !config.chainId) {
-          throw new Error('RPC endpoint and chain ID are required');
-        }
-        const [account] = await signer.getAccounts();
-        const client = await SigningCosmWasmClient.connectWithSigner(
-          config.rpcEndpoint,
-          signer,
-          {
-            gasPrice: GasPrice.fromString(config.gasPrice),
-          },
-        );
-        setKeplrSigningClient(client);
-        setKeplrAddress(account.address);
-        setWalletType('keplr');
-      } catch (err) {
-        console.error(err);
-        setError(err instanceof Error ? err.message : 'Failed to connect');
-        throw err;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [config],
-  );
-
   const connectAbstraxion = useCallback(() => {
-    // Abstraxion connection is handled by the modal - this just sets the wallet type preference
-    setWalletType('abstraxion');
+    // Abstraxion connection is handled by the modal
   }, []);
 
-  const connectKeplr = useCallback(async () => {
-    if (!window.keplr) {
-      throw new Error('Keplr is not available in this browser');
-    }
-    await window.keplr.enable(config.chainId);
-    const signer = await window.keplr.getOfflineSignerAuto(config.chainId);
-    await connectWithSigner(signer);
-  }, [config.chainId, connectWithSigner]);
-
   const disconnect = useCallback(() => {
-    if (walletType === 'abstraxion') {
-      abstraxionLogout?.();
-    }
-    setKeplrSigningClient(null);
-    setKeplrAddress('');
-    setWalletType(null);
-  }, [walletType, abstraxionLogout]);
+    abstraxionLogout?.();
+  }, [abstraxionLogout]);
 
   const ensureQueryClient = useCallback(async () => {
     if (signingClient) {
@@ -239,9 +161,7 @@ export const CosmosProvider: React.FC<React.PropsWithChildren> = ({ children }) 
       isConnected,
       loading,
       error,
-      walletType,
       connectAbstraxion,
-      connectKeplr,
       disconnect,
       execute,
       query,
@@ -252,7 +172,6 @@ export const CosmosProvider: React.FC<React.PropsWithChildren> = ({ children }) 
       address,
       config,
       connectAbstraxion,
-      connectKeplr,
       disconnect,
       error,
       execute,
@@ -262,7 +181,6 @@ export const CosmosProvider: React.FC<React.PropsWithChildren> = ({ children }) 
       loading,
       query,
       updateConfig,
-      walletType,
     ],
   );
 
