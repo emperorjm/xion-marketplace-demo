@@ -17,7 +17,7 @@ export function Admin() {
   const [customAcceptContract, setCustomAcceptContract] = useState('');
 
   // Form states for Asset Contract instantiation
-  const [assetCodeId, setAssetCodeId] = useState('');
+  const [assetCodeId, setAssetCodeId] = useState(import.meta.env.VITE_ASSET_CODE_ID || '');
   const [assetLabel, setAssetLabel] = useState('');
   const [assetName, setAssetName] = useState('');
   const [assetSymbol, setAssetSymbol] = useState('');
@@ -25,7 +25,7 @@ export function Admin() {
   const [assetMinter, setAssetMinter] = useState('');
 
   // Form states for Marketplace Contract instantiation
-  const [marketplaceCodeId, setMarketplaceCodeId] = useState('');
+  const [marketplaceCodeId, setMarketplaceCodeId] = useState(import.meta.env.VITE_MARKETPLACE_CODE_ID || '');
   const [marketplaceLabel, setMarketplaceLabel] = useState('');
   const [marketplaceAdmin, setMarketplaceAdmin] = useState('');
   const [marketplaceFeeRecipient, setMarketplaceFeeRecipient] = useState('');

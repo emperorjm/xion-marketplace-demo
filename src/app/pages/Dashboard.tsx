@@ -14,13 +14,13 @@ export function Dashboard() {
   const [deployResult, setDeployResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // Asset contract form
-  const [assetCodeId, setAssetCodeId] = useState('');
+  const [assetCodeId, setAssetCodeId] = useState(import.meta.env.VITE_ASSET_CODE_ID || '');
   const [assetLabel, setAssetLabel] = useState('');
   const [assetName, setAssetName] = useState('');
   const [assetSymbol, setAssetSymbol] = useState('');
 
   // Marketplace contract form
-  const [marketplaceCodeId, setMarketplaceCodeId] = useState('');
+  const [marketplaceCodeId, setMarketplaceCodeId] = useState(import.meta.env.VITE_MARKETPLACE_CODE_ID || '');
   const [marketplaceLabel, setMarketplaceLabel] = useState('');
   const [marketplaceFeeRecipient, setMarketplaceFeeRecipient] = useState('');
   const [marketplaceFeeBps, setMarketplaceFeeBps] = useState('200');

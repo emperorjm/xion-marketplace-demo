@@ -148,7 +148,7 @@ For more details, see the [XION Treasury Documentation](https://docs.burnt.com/x
 | Create NFT | `http://localhost:5173/create` | Mint new NFTs (Seller/Admin) |
 | Manage Listings | `http://localhost:5173/listings` | View/manage your listings (Seller/Admin) |
 | Offers | `http://localhost:5173/offers` | Manage offers |
-| Admin Panel | `http://localhost:5173/admin` | Contract management (Admin only) |
+| Admin Panel | `http://localhost:5173/admin` | Contract deployment & management (Admin only) |
 | Activity | `http://localhost:5173/activity` | Transaction history |
 | Developer Console | `http://localhost:5173/console` | Contract deployment, advanced queries |
 
@@ -170,17 +170,107 @@ Switch roles using the dropdown in the navigation bar.
 
 As an Admin, you're responsible for deploying contracts, configuring the marketplace, and managing ownership.
 
-### Part 1: Initial Setup via Developer Console
+### Part 1: Contract Deployment
 
-The Developer Console (`/console`) is used for initial contract deployment and low-level operations.
+There are three ways to deploy contracts. Choose the method that best suits your needs:
 
-#### Step 1: Connect Your Wallet
+| Method | Best For |
+|--------|----------|
+| **Dashboard Setup Flow** | First-time setup with guided steps |
+| **Admin Panel** | Quick deployment with minimal UI |
+| **Developer Console** | Advanced users, debugging, custom configurations |
+
+> **Note on Code IDs:** The app pre-populates the default code IDs for XION testnet-2:
+> - **Asset Contract Code ID:** `1813` (CW721 NFT contract)
+> - **Marketplace Contract Code ID:** `1814` (Marketplace contract)
+>
+> These are pre-deployed contract codes on the XION testnet. For custom deployments or different networks, you can configure these via environment variables (`VITE_ASSET_CODE_ID` and `VITE_MARKETPLACE_CODE_ID`) in your `.env.local` file.
+
+#### Option A: Dashboard Setup Flow (Recommended for First-Time Setup)
+
+The Dashboard (`/`) provides a guided Admin Setup checklist for new installations.
+
+##### Step 1: Access the Admin Setup
+
+1. Navigate to `http://localhost:5173`
+2. Select **"Admin"** from the role dropdown in the navbar
+3. Scroll down to the **"Admin Setup"** section
+4. You'll see a checklist with expandable steps
+
+##### Step 2: Deploy Contracts
+
+1. Click on **"Deploy Contracts"** to expand the deployment forms
+2. You'll see two sub-forms: **Asset Contract** and **Marketplace Contract**
+
+**Asset Contract Form:**
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| Code ID | The code ID for the CW721 asset contract | `1813` |
+| Label | Human-readable label | `My NFT Collection` |
+| Name | Display name for the collection | `XION Demo NFTs` |
+| Symbol | Short symbol | `XDEMO` |
+| Admin | (Optional) Admin for migrations | Your wallet address |
+| Minter | Address allowed to mint NFTs | Your wallet address |
+
+Click **"Deploy Asset Contract"** and approve the transaction. Once deployed, the contract address will be shown with a ✓.
+
+**Marketplace Contract Form:**
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| Code ID | The code ID for marketplace contract | `1814` |
+| Label | Human-readable label | `My Marketplace` |
+| Admin | (Optional) Admin for migrations | Your wallet address |
+| Fee Recipient | Address receiving marketplace fees | Your wallet address |
+| Fee BPS | Fee in basis points (100 = 1%) | `200` (2%) |
+| Listing Denom | Currency for listings | `uxion` |
+
+Click **"Deploy Marketplace Contract"** and approve the transaction.
+
+##### Step 3: Continue Setup
+
+Once both contracts are deployed:
+- The Deploy Contracts step will collapse automatically
+- Contract addresses are auto-configured in the app
+- Continue with **"Set Fees"** and **"Accept Minter Ownership"** steps
+
+#### Option B: Admin Panel Deployment
+
+The Admin Panel (`/admin`) also provides contract deployment forms.
+
+##### Step 1: Access the Admin Panel
+
+1. Navigate to `http://localhost:5173/admin`
+2. Scroll to the **"Deploy Contracts"** section
+
+##### Step 2: Deploy Asset Contract
+
+1. Fill in the **Instantiate Asset Contract** form:
+   - Code ID, Label, Name, Symbol, Admin (optional), Minter
+2. Click **"Instantiate Asset Contract"**
+3. Approve the transaction
+4. The contract address is automatically saved to the app configuration
+
+##### Step 3: Deploy Marketplace Contract
+
+1. Fill in the **Instantiate Marketplace Contract** form:
+   - Code ID, Label, Admin (optional), Fee Recipient, Fee BPS, Listing Denom
+2. Click **"Instantiate Marketplace Contract"**
+3. Approve the transaction
+4. The contract address is automatically saved to the app configuration
+
+#### Option C: Developer Console (Advanced)
+
+The Developer Console (`/console`) provides the most control over contract deployment.
+
+##### Step 1: Connect Your Wallet
 
 1. Navigate to `http://localhost:5173/console`
 2. Click **"Connect Wallet"** in the Wallet Panel
 3. Approve the connection in your wallet
 
-#### Step 2: Configure RPC Settings
+##### Step 2: Configure RPC Settings
 
 In the **Config Panel**, verify or update:
 
@@ -192,54 +282,33 @@ In the **Config Panel**, verify or update:
 | Prefix | `xion` |
 | Default Denom | `uxion` |
 
-#### Step 3: Deploy the Asset Contract
+##### Step 3: Deploy the Asset Contract
 
 1. Scroll to **"Deploy Contracts"** section
 2. Click **"Instantiate Asset Contract"**
-3. Fill in the fields:
+3. Fill in the fields (same as above, plus additional options)
+4. Check **"Use this address"** to auto-populate config
+5. Click **Submit** and approve the transaction
 
-| Field | Description | Example |
-|-------|-------------|---------|
-| Asset Code ID | The code ID for the CW721 asset contract | `1813` |
-| Instantiate Label | Human-readable label | `My NFT Collection` |
-| Admin Address | (Optional) Admin for migrations | Leave blank or your address |
-| Collection Name | Display name for the collection | `XION Demo NFTs` |
-| Collection Symbol | Short symbol | `XDEMO` |
-| Minter Address | Address allowed to mint NFTs | Your wallet address |
-| Creator Address | (Optional) Creator attribution | Your wallet address |
-| Use this address | Auto-populate config | Keep checked |
-
-4. Click **Submit**
-5. Approve the transaction in your wallet
-6. Note the contract address from the execution log
-
-#### Step 4: Deploy the Marketplace Contract
+##### Step 4: Deploy the Marketplace Contract
 
 1. Click **"Instantiate Marketplace Contract"**
-2. Fill in the fields:
+2. Fill in the fields (same as above, plus additional options like "Require Sale Approvals")
+3. Check **"Use this address"** to auto-populate config
+4. Click **Submit** and approve the transaction
 
-| Field | Description | Example |
-|-------|-------------|---------|
-| Marketplace Code ID | The code ID for marketplace contract | `1814` |
-| Instantiate Label | Human-readable label | `My Marketplace` |
-| Admin Address | (Optional) Admin for migrations | Your wallet address |
-| Fee Recipient | Address receiving marketplace fees | Your wallet address |
-| Fee BPS | Fee in basis points (100 = 1%) | `200` (2%) |
-| Require Sale Approvals | Require admin approval for sales | `Disabled` |
-| Listing Denom | Currency for listings | `uxion` |
-| Use this address | Auto-populate config | Keep checked |
+#### Accept Minter Ownership (If Required)
 
-3. Click **Submit**
-4. Approve the transaction in your wallet
+After deploying the Asset Contract, if minter ownership was transferred to your address:
 
-#### Step 5: Accept Minter Ownership (If Required)
+1. Go to Admin Panel (`/admin`) > **Minter Ownership** section
+2. Click **"Accept Minter Ownership"**
+3. Approve the transaction
 
-If minter ownership was transferred to your address:
-
+Or via Developer Console:
 1. Scroll to **"Asset Core"** section
 2. Find **"Accept Minter Ownership"**
 3. Click **Submit** (no additional fields needed)
-4. Approve the transaction
 
 ### Part 2: Ongoing Management via Admin Panel
 
@@ -250,6 +319,15 @@ Once contracts are deployed, use the Admin Panel (`/admin`) for routine manageme
 1. Navigate to `http://localhost:5173`
 2. Select **"Admin"** from the role dropdown in the navbar
 3. Click **"Admin"** in the navigation menu
+
+#### Deploy Additional Contracts
+
+The Admin Panel includes a **Deploy Contracts** section if you need to deploy new contract instances:
+
+- **Instantiate Asset Contract** - Deploy a new NFT collection contract
+- **Instantiate Marketplace Contract** - Deploy a new marketplace contract
+
+Both forms auto-configure the app with the new contract addresses after successful deployment.
 
 #### Query Current Minter
 
