@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useCosmos } from '../../hooks/useCosmos';
 import { useRole } from '../hooks/useLocalStore';
-import { addActivity, setFeesConfigured } from '../store/localStore';
+import { setFeesConfigured } from '../store/localStore';
 
 export function Admin() {
   const { config, updateConfig, execute, query, instantiate, address, isConnected } = useCosmos();
@@ -60,14 +60,6 @@ export function Admin() {
       // Update config with new contract address
       updateConfig({ assetContract: res.contractAddress });
 
-      addActivity({
-        type: 'admin',
-        tokenId: 'system',
-        from: address,
-        txHash: res.transactionHash,
-        description: 'Instantiated Asset Contract',
-      });
-
       setResult({
         success: true,
         message: `Asset contract deployed!\n\nAddress: ${res.contractAddress}\nTx: ${res.transactionHash}`,
@@ -116,14 +108,6 @@ export function Admin() {
       // Update config with new contract address
       updateConfig({ marketplaceContract: res.contractAddress });
 
-      addActivity({
-        type: 'admin',
-        tokenId: 'system',
-        from: address,
-        txHash: res.transactionHash,
-        description: 'Instantiated Marketplace Contract',
-      });
-
       setResult({
         success: true,
         message: `Marketplace contract deployed!\n\nAddress: ${res.contractAddress}\nTx: ${res.transactionHash}`,
@@ -151,15 +135,7 @@ export function Admin() {
         ? customAcceptContract
         : config.assetContract;
       const msg = { update_minter_ownership: 'accept_ownership' };
-      const res = await execute(targetContract, msg);
-
-      addActivity({
-        type: 'admin',
-        tokenId: 'system',
-        from: address,
-        txHash: res.transactionHash,
-        description: 'Accepted Minter Ownership',
-      });
+      await execute(targetContract, msg);
 
       setResult({ success: true, message: 'Minter ownership accepted!' });
     } catch (err) {
@@ -179,16 +155,7 @@ export function Admin() {
           transfer_ownership: { new_minter: newMinter },
         },
       };
-      const res = await execute(config.assetContract, msg);
-
-      addActivity({
-        type: 'admin',
-        tokenId: 'system',
-        from: address,
-        to: newMinter,
-        txHash: res.transactionHash,
-        description: 'Transferred Minter Ownership',
-      });
+      await execute(config.assetContract, msg);
 
       setResult({ success: true, message: `Minter ownership transfer initiated to ${newMinter}` });
       setNewMinter('');
@@ -226,15 +193,7 @@ export function Admin() {
           },
         },
       };
-      const res = await execute(config.marketplaceContract, msg);
-
-      addActivity({
-        type: 'admin',
-        tokenId: 'system',
-        from: address,
-        txHash: res.transactionHash,
-        description: 'Updated Marketplace Config',
-      });
+      await execute(config.marketplaceContract, msg);
 
       setFeesConfigured(true);
       setResult({ success: true, message: 'Marketplace fees updated!' });

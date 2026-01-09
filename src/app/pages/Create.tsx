@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useCosmos } from '../../hooks/useCosmos';
-import { addActivity } from '../store/localStore';
 
 export function Create() {
   const { config, execute, address, isConnected } = useCosmos();
@@ -33,14 +32,7 @@ export function Create() {
         },
       };
 
-      const result = await execute(config.assetContract, msg);
-
-      addActivity({
-        type: 'mint',
-        tokenId,
-        to: address,
-        txHash: result.transactionHash,
-      });
+      await execute(config.assetContract, msg);
 
       setSuccess(true);
       setTokenId('');

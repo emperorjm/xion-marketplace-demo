@@ -1,74 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
 import { NFTCard } from '../components/NFTCard';
 import { useCosmos } from '../../hooks/useCosmos';
-import { fetchJsonFromUri, extractImageFromMetadata } from '../../lib/helpers';
-
-interface NFTItem {
-  tokenId: string;
-  name: string;
-  image?: string;
-}
+import { useUserNFTs } from '../../api/hooks';
 
 export function MyItems() {
-  const { config, query, address, isConnected } = useCosmos();
-  const [nfts, setNfts] = useState<NFTItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { address, isConnected } = useCosmos();
+  const { data: nfts, loading, source, refetch } = useUserNFTs(address);
 
-  const loadMyNFTs = useCallback(async () => {
-    if (!config.assetContract || !address) {
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const tokensResult = await query(config.assetContract, {
-        tokens: { owner: address, limit: 100 },
-      }) as { tokens: string[] };
-
-      const tokens = tokensResult.tokens || [];
-
-      const nftPromises = tokens.map(async (tokenId: string) => {
-        try {
-          const nftInfo = await query(config.assetContract, {
-            nft_info: { token_id: tokenId },
-          }) as { token_uri?: string; extension?: { name?: string; image?: string } };
-
-          let name = nftInfo.extension?.name || `Token #${tokenId}`;
-          let image = nftInfo.extension?.image;
-
-          if (nftInfo.token_uri && !image) {
-            try {
-              const metadata = await fetchJsonFromUri(nftInfo.token_uri);
-              name = metadata.name || name;
-              image = extractImageFromMetadata(metadata);
-            } catch {
-              // Ignore
-            }
-          }
-
-          return { tokenId, name, image };
-        } catch {
-          return { tokenId, name: `Token #${tokenId}` };
-        }
-      });
-
-      const loadedNfts = await Promise.all(nftPromises);
-      setNfts(loadedNfts);
-    } catch (err) {
-      console.error('Error loading NFTs:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [config.assetContract, address, query]);
-
-  useEffect(() => {
-    if (isConnected) {
-      loadMyNFTs();
-    } else {
-      setLoading(false);
-    }
-  }, [isConnected, loadMyNFTs]);
+  const dataSourceLabel = source === 'indexer' ? 'from indexer' : source === 'rpc' ? 'from blockchain' : '';
 
   if (!isConnected) {
     return (
@@ -91,9 +29,12 @@ export function MyItems() {
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <h1 className="page-title">My Items</h1>
-          <p className="page-subtitle">You own {nfts.length} NFTs</p>
+          <p className="page-subtitle">
+            You own {nfts.length} NFTs
+            {dataSourceLabel && <span style={{ marginLeft: '8px', color: 'var(--text-muted)' }}>({dataSourceLabel})</span>}
+          </p>
         </div>
-        <button className="btn btn-secondary" onClick={loadMyNFTs} disabled={loading}>
+        <button className="btn btn-secondary" onClick={refetch} disabled={loading}>
           {loading ? 'Loading...' : 'Refresh'}
         </button>
       </div>
@@ -111,7 +52,7 @@ export function MyItems() {
       ) : (
         <div className="nft-grid">
           {nfts.map((nft) => (
-            <NFTCard key={nft.tokenId} tokenId={nft.tokenId} name={nft.name} image={nft.image} isOwned />
+            <NFTCard key={nft.tokenId} tokenId={nft.tokenId} name={nft.name} image={nft.image} isOwned source={source} />
           ))}
         </div>
       )}

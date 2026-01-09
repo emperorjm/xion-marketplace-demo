@@ -57,3 +57,4 @@ Thumbs.db
 
 # Generated env config (bypasses shell env override)
 src/generated-env.ts
+dist-server/

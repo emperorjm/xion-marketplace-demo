@@ -1,22 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useCosmos } from '../../hooks/useCosmos';
 import { useRole } from '../hooks/useLocalStore';
-import { fetchJsonFromUri, extractImageFromMetadata, buildCoin } from '../../lib/helpers';
-import { addActivity, addListing, removeListing, addOffer, removeOffer, getOffersByToken } from '../store/localStore';
+import { useNFTDetails, useOffers, useListings } from '../../api/hooks';
+import { buildCoin } from '../../lib/helpers';
+import { addListing, removeListing, addOffer, removeOffer, getOffersByToken } from '../store/localStore';
 
-interface NFTDetails {
-  tokenId: string;
-  name: string;
-  description?: string;
-  image?: string;
-  owner: string;
-  isListed: boolean;
-  price?: string;
-  denom?: string;
-}
-
-interface OfferInfo {
+interface LocalOfferInfo {
   offerId: string;
   bidder: string;
   price: string;
@@ -25,102 +15,83 @@ interface OfferInfo {
 
 export function ItemDetail() {
   const { tokenId } = useParams<{ tokenId: string }>();
-  const { config, query, execute, address, isConnected } = useCosmos();
+  const { config, execute, address, isConnected } = useCosmos();
   const { role } = useRole();
-  const [nft, setNft] = useState<NFTDetails | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  // Fetch NFT details and listings from API
+  const { data: nftData, loading: nftLoading, source, refetch: refetchNFT } = useNFTDetails(tokenId || null);
+  const { data: allListings, refetch: refetchListings } = useListings();
+  const { data: apiOffers, refetch: refetchOffers } = useOffers(tokenId || null);
+
   const [actionLoading, setActionLoading] = useState(false);
   const [listPrice, setListPrice] = useState('');
   const [showListModal, setShowListModal] = useState(false);
   const [offerAmount, setOfferAmount] = useState('');
   const [showOfferModal, setShowOfferModal] = useState(false);
-  const [offers, setOffers] = useState<OfferInfo[]>([]);
+  const [localOffers, setLocalOffers] = useState<LocalOfferInfo[]>([]);
 
-  const loadNFT = useCallback(async () => {
-    if (!config.assetContract || !tokenId) return;
+  // Find listing info for this NFT
+  const listingInfo = useMemo(() => {
+    return allListings.find(l => l.tokenId === tokenId);
+  }, [allListings, tokenId]);
 
-    setLoading(true);
-    try {
-      const nftInfo = await query(config.assetContract, {
-        nft_info: { token_id: tokenId },
-      }) as { token_uri?: string; extension?: { name?: string; description?: string; image?: string } };
+  // Combine NFT data with listing status
+  const nft = useMemo(() => {
+    if (!nftData) return null;
+    return {
+      tokenId: nftData.tokenId,
+      name: nftData.name,
+      description: nftData.description,
+      image: nftData.image,
+      owner: nftData.owner,
+      isListed: !!listingInfo,
+      price: listingInfo?.price,
+      denom: listingInfo?.denom,
+    };
+  }, [nftData, listingInfo]);
 
-      const ownerInfo = await query(config.assetContract, {
-        owner_of: { token_id: tokenId },
-      }) as { owner: string };
+  // Combine API offers with localStorage offers (for backward compatibility)
+  const offers = useMemo(() => {
+    // Start with API offers
+    const allOffers: LocalOfferInfo[] = apiOffers.map(o => ({
+      offerId: o.offerId,
+      bidder: o.bidder,
+      price: o.price,
+      denom: o.denom,
+    }));
 
-      let isListed = false;
-      let price: string | undefined;
-      let denom: string | undefined;
-
-      // Query all listings from blockchain and find this token
-      try {
-        const listingsResult = await query(config.assetContract, {
-          extension: {
-            msg: {
-              get_all_listings: {
-                start_after: undefined,
-                limit: 100,
-              },
-            },
-          },
-        }) as Array<{ id: string; price?: { amount: string; denom: string } }>;
-
-        const listing = listingsResult?.find(l => l.id === tokenId);
-        if (listing?.price) {
-          isListed = true;
-          price = listing.price.amount;
-          denom = listing.price.denom;
-        }
-      } catch {
-        // Unable to fetch listings
+    // Add local offers that aren't in API (might not be indexed yet)
+    const apiOfferIds = new Set(apiOffers.map(o => o.offerId));
+    localOffers.forEach(lo => {
+      if (!apiOfferIds.has(lo.offerId)) {
+        allOffers.push(lo);
       }
+    });
 
-      let name = nftInfo.extension?.name || `Token #${tokenId}`;
-      let description = nftInfo.extension?.description;
-      let image = nftInfo.extension?.image;
+    return allOffers;
+  }, [apiOffers, localOffers]);
 
-      if (nftInfo.token_uri && !image) {
-        try {
-          const metadata = await fetchJsonFromUri(nftInfo.token_uri);
-          name = metadata.name || name;
-          description = metadata.description || description;
-          image = extractImageFromMetadata(metadata);
-        } catch {
-          // Ignore
-        }
-      }
-
-      setNft({
-        tokenId,
-        name,
-        description,
-        image,
-        owner: ownerInfo.owner,
-        isListed,
-        price,
-        denom,
-      });
-
-      // Load offers for this NFT from localStorage
-      // Note: Contract doesn't support listing offers by token, so we only show locally-tracked offers
-      const localOffers = getOffersByToken(tokenId);
-      setOffers(localOffers.map(o => ({
+  // Load local offers on mount
+  useEffect(() => {
+    if (tokenId) {
+      const stored = getOffersByToken(tokenId);
+      setLocalOffers(stored.map(o => ({
         offerId: o.offerId,
         bidder: o.bidder,
         price: o.price,
         denom: o.denom,
       })));
-    } catch (err) {
-      console.error('Error loading NFT:', err);
-    } finally {
-      setLoading(false);
     }
-  }, [config.assetContract, tokenId, query]);
+  }, [tokenId]);
 
-  useEffect(() => {
-    loadNFT();
-  }, [loadNFT]);
+  const refetchAll = () => {
+    refetchNFT();
+    refetchListings();
+    refetchOffers();
+  };
+
+  const loading = nftLoading;
+  const dataSourceLabel = source === 'indexer' ? 'from indexer' : source === 'rpc' ? 'from blockchain' : '';
 
   const formatPrice = (amount: string, denomination: string) => {
     const num = parseFloat(amount) / 1_000_000;
@@ -141,30 +112,13 @@ export function ItemDetail() {
         },
       };
       const funds = [buildCoin(nft.price, nft.denom)];
-      const result = await execute(config.assetContract, msg, undefined, funds);
-
-      addActivity({
-        type: 'buy',
-        tokenId: tokenId!,
-        from: nft.owner,
-        to: address,
-        price: nft.price,
-        txHash: result.transactionHash,
-      });
+      await execute(config.assetContract, msg, undefined, funds);
 
       // Clear listing from localStorage after successful purchase
       removeListing(tokenId!);
 
-      // Directly update state to show correct ownership and status
-      setNft({
-        ...nft,
-        isListed: false,
-        price: undefined,
-        denom: undefined,
-        owner: address!,
-      });
-
       alert(`Successfully purchased "${nft.name}"!`);
+      refetchAll();
     } catch (err) {
       console.error('Error buying:', err);
       alert(err instanceof Error ? err.message : 'Failed to buy');
@@ -189,15 +143,7 @@ export function ItemDetail() {
           },
         },
       };
-      const result = await execute(config.assetContract, msg);
-
-      addActivity({
-        type: 'list',
-        tokenId: tokenId!,
-        from: address,
-        price: priceInMicro,
-        txHash: result.transactionHash,
-      });
+      await execute(config.assetContract, msg);
 
       // Store listing in localStorage for immediate UI update
       addListing(tokenId!, priceInMicro, config.defaultDenom);
@@ -205,7 +151,7 @@ export function ItemDetail() {
       setShowListModal(false);
       setListPrice('');
       alert(`Successfully listed for ${listPrice} ${config.defaultDenom.replace('u', '').toUpperCase()}!`);
-      loadNFT();
+      refetchAll();
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
 
@@ -215,7 +161,7 @@ export function ItemDetail() {
         addListing(tokenId!, priceInMicro, config.defaultDenom);
         setShowListModal(false);
         setListPrice('');
-        loadNFT();
+        refetchAll();
         return;
       }
 
@@ -250,20 +196,11 @@ export function ItemDetail() {
       // Generate offer ID from tx hash for localStorage tracking
       const offerId = `offer-${result.transactionHash.slice(0, 16)}`;
 
-      addActivity({
-        type: 'offer',
-        tokenId: tokenId!,
-        from: address,
-        to: nft.owner,
-        price: priceInMicro,
-        txHash: result.transactionHash,
-      });
-
       // Store offer in localStorage
       addOffer(offerId, tokenId!, address!, priceInMicro, config.defaultDenom);
 
-      // Update offers state directly
-      setOffers(prev => [...prev, {
+      // Update local offers state directly for immediate UI update
+      setLocalOffers(prev => [...prev, {
         offerId,
         bidder: address!,
         price: priceInMicro,
@@ -273,6 +210,7 @@ export function ItemDetail() {
       setShowOfferModal(false);
       setOfferAmount('');
       alert('Offer submitted successfully!');
+      refetchOffers();
     } catch (err) {
       console.error('Error making offer:', err);
       alert(err instanceof Error ? err.message : 'Failed to make offer');
@@ -281,7 +219,7 @@ export function ItemDetail() {
     }
   };
 
-  const handleAcceptOffer = async (offer: OfferInfo) => {
+  const handleAcceptOffer = async (offer: LocalOfferInfo) => {
     const confirmed = window.confirm(
       `Accept offer of ${formatPrice(offer.price, offer.denom)} from ${offer.bidder.slice(0, 12)}...?`
     );
@@ -290,27 +228,14 @@ export function ItemDetail() {
     setActionLoading(true);
     try {
       const msg = { accept_offer: { offer_id: offer.offerId } };
-      const result = await execute(config.marketplaceContract, msg);
+      await execute(config.marketplaceContract, msg);
 
-      addActivity({
-        type: 'accept_offer',
-        tokenId: tokenId!,
-        from: address,
-        to: offer.bidder,
-        price: offer.price,
-        txHash: result.transactionHash,
-      });
-
-      // Remove offer from localStorage and update state
+      // Remove offer from localStorage and update local state
       removeOffer(offer.offerId);
-      setOffers(prev => prev.filter(o => o.offerId !== offer.offerId));
-
-      // Update NFT state - owner is now the bidder
-      if (nft) {
-        setNft({ ...nft, owner: offer.bidder, isListed: false, price: undefined, denom: undefined });
-      }
+      setLocalOffers(prev => prev.filter(o => o.offerId !== offer.offerId));
 
       alert('Offer accepted successfully!');
+      refetchAll();
     } catch (err) {
       console.error('Error accepting offer:', err);
       alert(err instanceof Error ? err.message : 'Failed to accept offer');
@@ -319,27 +244,21 @@ export function ItemDetail() {
     }
   };
 
-  const handleRejectOffer = async (offer: OfferInfo) => {
+  const handleRejectOffer = async (offer: LocalOfferInfo) => {
     const confirmed = window.confirm('Reject this offer?');
     if (!confirmed) return;
 
     setActionLoading(true);
     try {
       const msg = { reject_offer: { offer_id: offer.offerId } };
-      const result = await execute(config.marketplaceContract, msg);
+      await execute(config.marketplaceContract, msg);
 
-      addActivity({
-        type: 'reject_offer',
-        tokenId: tokenId!,
-        from: address,
-        txHash: result.transactionHash,
-      });
-
-      // Remove offer from localStorage and update state
+      // Remove offer from localStorage and update local state
       removeOffer(offer.offerId);
-      setOffers(prev => prev.filter(o => o.offerId !== offer.offerId));
+      setLocalOffers(prev => prev.filter(o => o.offerId !== offer.offerId));
 
       alert('Offer rejected.');
+      refetchOffers();
     } catch (err) {
       console.error('Error rejecting offer:', err);
       alert(err instanceof Error ? err.message : 'Failed to reject offer');
@@ -348,27 +267,21 @@ export function ItemDetail() {
     }
   };
 
-  const handleCancelOffer = async (offer: OfferInfo) => {
+  const handleCancelOffer = async (offer: LocalOfferInfo) => {
     const confirmed = window.confirm('Cancel your offer?');
     if (!confirmed) return;
 
     setActionLoading(true);
     try {
       const msg = { cancel_offer: { offer_id: offer.offerId } };
-      const result = await execute(config.marketplaceContract, msg);
+      await execute(config.marketplaceContract, msg);
 
-      addActivity({
-        type: 'cancel_offer',
-        tokenId: tokenId!,
-        from: address,
-        txHash: result.transactionHash,
-      });
-
-      // Remove offer from localStorage and update state
+      // Remove offer from localStorage and update local state
       removeOffer(offer.offerId);
-      setOffers(prev => prev.filter(o => o.offerId !== offer.offerId));
+      setLocalOffers(prev => prev.filter(o => o.offerId !== offer.offerId));
 
       alert('Offer cancelled.');
+      refetchOffers();
     } catch (err) {
       console.error('Error cancelling offer:', err);
       alert(err instanceof Error ? err.message : 'Failed to cancel offer');
@@ -401,9 +314,17 @@ export function ItemDetail() {
 
   return (
     <div>
-      <Link to="/explore" style={{ color: 'var(--text-secondary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
-        ← Back to Explore
-      </Link>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        <Link to="/explore" style={{ color: 'var(--text-secondary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+          ← Back to Explore
+        </Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {dataSourceLabel && <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>({dataSourceLabel})</span>}
+          <button className="btn btn-secondary" onClick={refetchAll} disabled={loading}>
+            {loading ? 'Loading...' : 'Refresh'}
+          </button>
+        </div>
+      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px' }}>
         {/* Image */}

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useCosmos } from '../../hooks/useCosmos';
 import { fetchJsonFromUri, extractImageFromMetadata } from '../../lib/helpers';
-import { addActivity, getOffersByBidder, removeOffer } from '../store/localStore';
+import { getOffersByBidder, removeOffer } from '../store/localStore';
 
 interface Offer {
   offerId: string;
@@ -93,14 +93,7 @@ export function Offers() {
       const msg = {
         cancel_offer: { offer_id: offer.offerId },
       };
-      const result = await execute(config.marketplaceContract, msg);
-
-      addActivity({
-        type: 'cancel_offer',
-        tokenId: offer.tokenId,
-        from: address,
-        txHash: result.transactionHash,
-      });
+      await execute(config.marketplaceContract, msg);
 
       // Remove offer from localStorage and update state
       removeOffer(offer.offerId);

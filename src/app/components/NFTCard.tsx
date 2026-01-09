@@ -11,6 +11,7 @@ interface NFTCardProps {
   isListed?: boolean;
   isOwned?: boolean;
   onClick?: () => void;
+  source?: 'indexer' | 'rpc' | null;
 }
 
 export function NFTCard({
@@ -23,6 +24,7 @@ export function NFTCard({
   isListed,
   isOwned,
   onClick,
+  source,
 }: NFTCardProps) {
   const formatPrice = (amount: string, denomination: string) => {
     const num = parseFloat(amount) / 1_000_000; // Convert from micro units
@@ -31,11 +33,29 @@ export function NFTCard({
 
   const content = (
     <>
-      <div className="nft-card-image">
+      <div className="nft-card-image" style={{ position: 'relative' }}>
         {image ? (
           <img src={image} alt={name} loading="lazy" />
         ) : (
           <div className="nft-card-placeholder">🖼️</div>
+        )}
+        {source && (
+          <span
+            style={{
+              position: 'absolute',
+              top: '8px',
+              right: '8px',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              fontSize: '10px',
+              fontWeight: '600',
+              textTransform: 'uppercase',
+              background: source === 'indexer' ? 'var(--accent-green)' : 'var(--accent-blue)',
+              color: '#fff',
+            }}
+          >
+            {source === 'indexer' ? 'IDX' : 'RPC'}
+          </span>
         )}
       </div>
       <div className="nft-card-content">

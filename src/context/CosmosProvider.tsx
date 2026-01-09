@@ -54,10 +54,24 @@ const defaultConfig: CosmosConfig = {
   defaultDenom: import.meta.env.VITE_DEFAULT_DENOM || 'uxion',
 };
 
+const CONFIG_STORAGE_KEY = 'xion-marketplace-config';
+
+const loadSavedConfig = (): Partial<CosmosConfig> => {
+  try {
+    const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : {};
+  } catch {
+    return {};
+  }
+};
+
 const CosmosContext = createContext<CosmosContextValue | undefined>(undefined);
 
 export const CosmosProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
-  const [config, setConfig] = useState<CosmosConfig>(defaultConfig);
+  const [config, setConfig] = useState<CosmosConfig>(() => ({
+    ...defaultConfig,
+    ...loadSavedConfig(),
+  }));
   const [queryClient, setQueryClient] = useState<CosmWasmClient | null>(null);
   const [loading] = useState(false);
   const [error] = useState<string | null>(null);
@@ -76,7 +90,16 @@ export const CosmosProvider: React.FC<React.PropsWithChildren> = ({ children }) 
   }, [config.rpcEndpoint]);
 
   const updateConfig = useCallback((patch: Partial<CosmosConfig>) => {
-    setConfig((prev) => ({ ...prev, ...patch }));
+    setConfig((prev) => {
+      const updated = { ...prev, ...patch };
+      // Persist contract addresses to localStorage
+      const toSave = {
+        assetContract: updated.assetContract,
+        marketplaceContract: updated.marketplaceContract,
+      };
+      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(toSave));
+      return updated;
+    });
   }, []);
 
   const connectAbstraxion = useCallback(() => {

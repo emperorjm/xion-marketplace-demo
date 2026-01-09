@@ -10,6 +10,7 @@ import { Listings } from './app/pages/Listings';
 import { Offers } from './app/pages/Offers';
 import { Admin } from './app/pages/Admin';
 import { Activity } from './app/pages/Activity';
+import { Settings } from './app/pages/Settings';
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
         <Route path="offers" element={<Offers />} />
         <Route path="admin" element={<Admin />} />
         <Route path="activity" element={<Activity />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
 
       {/* Developer Console */}

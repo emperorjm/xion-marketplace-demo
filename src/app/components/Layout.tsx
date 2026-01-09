@@ -63,6 +63,9 @@ export function Layout() {
           <NavLink to="/activity" className={({ isActive }) => `app-nav-link ${isActive ? 'active' : ''}`}>
             Activity
           </NavLink>
+          <NavLink to="/settings" className={({ isActive }) => `app-nav-link ${isActive ? 'active' : ''}`}>
+            Settings
+          </NavLink>
         </div>
 
         <div className="app-navbar-actions">

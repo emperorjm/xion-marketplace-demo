@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useActivity } from '../hooks/useLocalStore';
+import { useActivity } from '../../api/hooks';
 
 export function Activity() {
-  const { activities, clearActivities } = useActivity();
+  const { data: activities, loading, source, refetch } = useActivity(50);
   const [filter, setFilter] = useState<string>('all');
 
   const activityTypes = ['all', 'mint', 'list', 'delist', 'buy', 'offer', 'accept_offer', 'admin'];
@@ -53,18 +53,21 @@ export function Activity() {
     return `${num.toLocaleString()} XION`;
   };
 
+  const dataSourceLabel = source === 'indexer' ? 'from indexer' : source === 'rpc' ? 'from blockchain' : '';
+
   return (
     <div>
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <h1 className="page-title">Activity</h1>
-          <p className="page-subtitle">Your transaction history (stored locally)</p>
+          <p className="page-subtitle">
+            Transaction history ({dataSourceLabel})
+            {loading && <span style={{ marginLeft: '8px', color: 'var(--text-muted)' }}>Loading...</span>}
+          </p>
         </div>
-        {activities.length > 0 && (
-          <button className="btn btn-secondary" onClick={clearActivities}>
-            Clear History
-          </button>
-        )}
+        <button className="btn btn-secondary" onClick={refetch} disabled={loading}>
+          {loading ? 'Loading...' : 'Refresh'}
+        </button>
       </div>
 
       {/* Filters */}
@@ -108,9 +111,28 @@ export function Activity() {
                     justifyContent: 'center',
                     fontSize: '24px',
                     flexShrink: 0,
+                    position: 'relative',
                   }}
                 >
                   {getActivityIcon(activity.type)}
+                  {source && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        bottom: '-4px',
+                        right: '-4px',
+                        padding: '1px 4px',
+                        borderRadius: '3px',
+                        fontSize: '8px',
+                        fontWeight: '600',
+                        textTransform: 'uppercase',
+                        background: source === 'indexer' ? 'var(--accent-green)' : 'var(--accent-blue)',
+                        color: '#fff',
+                      }}
+                    >
+                      {source === 'indexer' ? 'IDX' : 'RPC'}
+                    </span>
+                  )}
                 </div>
 
                 {/* Info */}

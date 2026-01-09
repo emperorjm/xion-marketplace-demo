@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useRole } from '../hooks/useLocalStore';
 import { useCosmos } from '../../hooks/useCosmos';
-import { getFeesConfigured, getRecentActivity, addActivity } from '../store/localStore';
+import { getFeesConfigured, getRecentActivity } from '../store/localStore';
 
 export function Dashboard() {
   const { role } = useRole();
@@ -47,14 +47,6 @@ export function Dashboard() {
 
       updateConfig({ assetContract: res.contractAddress });
 
-      addActivity({
-        type: 'admin',
-        tokenId: 'system',
-        from: address,
-        txHash: res.transactionHash,
-        description: 'Deployed Asset Contract',
-      });
-
       setDeployResult({
         success: true,
         message: `Asset contract deployed: ${res.contractAddress.slice(0, 20)}...`,
@@ -94,14 +86,6 @@ export function Dashboard() {
       const res = await instantiate(parseInt(marketplaceCodeId), msg, marketplaceLabel, {});
 
       updateConfig({ marketplaceContract: res.contractAddress });
-
-      addActivity({
-        type: 'admin',
-        tokenId: 'system',
-        from: address,
-        txHash: res.transactionHash,
-        description: 'Deployed Marketplace Contract',
-      });
 
       setDeployResult({
         success: true,
