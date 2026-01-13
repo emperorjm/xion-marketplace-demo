@@ -25,6 +25,15 @@ router.get('/:tokenId', async (req: Request, res: Response) => {
     if (!forceRpc && isIndexerAvailable()) {
       data = await getOffersFromIndexer(tokenId);
       source = 'indexer';
+
+      // Fallback to RPC if indexer returned empty (e.g., indexer is behind)
+      if (data.length === 0) {
+        const rpcData = await getOffersFromRpc(tokenId);
+        if (rpcData.length > 0) {
+          data = rpcData;
+          source = 'rpc';
+        }
+      }
     } else {
       data = await getOffersFromRpc(tokenId);
       source = 'rpc';

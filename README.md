@@ -8,16 +8,18 @@ A full-featured NFT marketplace built on the XION blockchain with a React + Vite
 2. [Getting Started](#getting-started)
 3. [Deployment](#deployment)
 4. [Configuration](#configuration)
-5. [Abstraxion Setup](#abstraxion-setup-recommended)
-6. [Quick Reference](#quick-reference)
-7. [Admin Guide](#admin-guide)
-8. [Seller Guide](#seller-guide)
-9. [Buyer Guide](#buyer-guide)
-10. [Activity & History](#activity--history)
-11. [Developer Console Reference](#developer-console-reference)
-12. [Troubleshooting](#troubleshooting)
-13. [Contract Message Examples](#contract-message-examples)
-14. [Notes](#notes)
+5. [Backend Architecture](#backend-architecture)
+6. [API Reference](#api-reference)
+7. [Abstraxion Setup](#abstraxion-setup)
+8. [Quick Reference](#quick-reference)
+9. [Admin Guide](#admin-guide)
+10. [Seller Guide](#seller-guide)
+11. [Buyer Guide](#buyer-guide)
+12. [Activity & History](#activity--history)
+13. [Developer Console Reference](#developer-console-reference)
+14. [Troubleshooting](#troubleshooting)
+15. [Contract Message Examples](#contract-message-examples)
+16. [Notes](#notes)
 
 ---
 
@@ -27,8 +29,9 @@ The XION Marketplace Demo provides:
 
 - **Marketplace UI** (`/`) - User-friendly interface for browsing, buying, and selling NFTs
 - **Developer Console** (`/console`) - Low-level contract interaction for deployment and advanced operations
+- **REST API** (`/api`) - Backend endpoints for querying NFTs, listings, offers, and activity
 
-All blockchain interactions happen in the browser via CosmJS. No backend required.
+All blockchain interactions happen in the browser via CosmJS. The optional Express backend provides a data layer with PostgreSQL indexer support (falls back to RPC queries when unavailable).
 
 ### Getting Testnet Tokens
 
@@ -44,9 +47,25 @@ All blockchain interactions happen in the browser via CosmJS. No backend require
 
 ```
 xion-marketplace-demo/
-├── package.json          # Vite + React dependencies
+├── package.json          # Dependencies (React, Express, CosmJS, pg)
 ├── vite.config.ts        # Vite configuration
-├── src/                  # React application source
+├── tsconfig.json         # Frontend TypeScript config
+├── tsconfig.server.json  # Backend TypeScript config
+├── src/                  # React frontend application
+│   ├── App.tsx           # Main app with routing
+│   ├── app/              # Pages and components
+│   │   ├── pages/        # Dashboard, Explore, Settings, Admin, etc.
+│   │   └── components/   # Shared components (Layout, NFTCard, etc.)
+│   ├── api/              # Frontend API client and hooks
+│   ├── context/          # React context providers (CosmosProvider)
+│   └── lib/              # Utilities and type definitions
+├── server/               # Express API server
+│   ├── index.ts          # Server entry point (port 3001)
+│   ├── config.ts         # Server configuration
+│   ├── types.ts          # Shared TypeScript types
+│   ├── routes/           # API route handlers
+│   ├── services/         # Data layer (indexer.ts, rpc.ts)
+│   └── db/               # PostgreSQL connection pool
 ├── public/               # Static assets
 └── index.html            # Entry HTML file
 ```
@@ -55,14 +74,27 @@ xion-marketplace-demo/
 
 ```bash
 npm install              # Install dependencies
-npm run dev             # Start dev server on http://localhost:5173
+npm run dev              # Start both frontend and backend dev servers
 ```
+
+The application will be available at:
+- **Frontend**: http://localhost:5173
+- **Backend API**: http://localhost:3001
+
+#### Development Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start both frontend (Vite) and backend (Express) servers |
+| `npm run dev:client` | Start only the frontend on http://localhost:5173 |
+| `npm run dev:server` | Start only the backend API on http://localhost:3001 |
 
 ### Production Build
 
 ```bash
-npm run build           # Build for production (outputs to dist/)
-npm run preview         # Preview production build locally
+npm run build           # Build frontend for production (outputs to dist/)
+npm run build:server    # Build backend for production (outputs to dist-server/)
+npm run start           # Start production server (serves both API and static files)
 ```
 
 ---
@@ -82,13 +114,375 @@ Simply deploy the `dist/` folder after running `npm run build`.
 
 ## Configuration
 
-Copy `.env.example` to `.env.local` and configure:
-- RPC endpoint
-- Chain ID
-- Contract addresses
-- Gas price
-- Bech32 prefix
-- Abstraxion treasury address (for gasless transactions)
+Copy `.env.example` to `.env.local` and configure your environment.
+
+### Frontend Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `VITE_RPC_ENDPOINT` | XION node RPC URL | `https://rpc.xion-testnet-1.burnt.com:443` |
+| `VITE_CHAIN_ID` | Chain identifier | `xion-testnet-2` |
+| `VITE_GAS_PRICE` | Gas price with denom | `0.025uxion` |
+| `VITE_PREFIX` | Bech32 address prefix | `xion` |
+| `VITE_DEFAULT_DENOM` | Default token denomination | `uxion` |
+| `VITE_ASSET_CONTRACT` | Deployed NFT contract address | (set via UI) |
+| `VITE_MARKETPLACE_CONTRACT` | Deployed marketplace contract address | (set via UI) |
+| `VITE_ASSET_CODE_ID` | Code ID for asset contract deployment | `1813` |
+| `VITE_MARKETPLACE_CODE_ID` | Code ID for marketplace deployment | `1814` |
+| `VITE_ABSTRAXION_TREASURY` | Treasury contract for gasless transactions | (required) |
+
+### Backend Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `INDEXER_DB_URL` | PostgreSQL connection string for indexer | (none - uses RPC fallback) |
+| `PORT` | Express server port | `3001` |
+
+---
+
+## Backend Architecture
+
+The application includes an Express.js backend that provides a unified API for querying blockchain data.
+
+### Data Layer Strategy
+
+The backend implements a dual data layer with automatic fallback:
+
+| Source | When Used | Advantages |
+|--------|-----------|------------|
+| **PostgreSQL Indexer** | When `INDEXER_DB_URL` is configured | Fast queries, historical data, efficient pagination |
+| **RPC (CosmJS)** | Fallback when indexer unavailable | No additional infrastructure required |
+
+### Architecture Diagram
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│    Frontend     │────▶│  Express Server  │────▶│   PostgreSQL    │
+│    (React)      │     │    /api/*        │     │   (Indexer DB)  │
+└─────────────────┘     └────────┬─────────┘     └─────────────────┘
+                                 │                        │
+                                 │ (automatic fallback)   │
+                                 ▼                        │
+                        ┌─────────────────┐               │
+                        │    XION RPC     │◀──────────────┘
+                        │    (CosmJS)     │
+                        └─────────────────┘
+```
+
+### Fallback Behavior
+
+1. Each API endpoint first checks if the indexer is available
+2. If available, queries the PostgreSQL database
+3. If unavailable or query fails, automatically falls back to RPC
+4. Response includes `source` field indicating which data source was used
+
+---
+
+## API Reference
+
+All API endpoints are prefixed with `/api` and return JSON responses.
+
+### Response Format
+
+All successful responses follow this structure:
+
+```json
+{
+  "data": [...],
+  "source": "indexer" | "rpc",
+  "timestamp": 1704931200000
+}
+```
+
+### Endpoints
+
+#### GET /api/health
+
+Health check and configuration status.
+
+**Response:**
+
+```json
+{
+  "status": "ok",
+  "dataSource": "indexer",
+  "indexerAvailable": true,
+  "config": {
+    "assetContract": "xion1abc...",
+    "marketplaceContract": "xion1def...",
+    "rpcEndpoint": "https://rpc.xion-testnet-1.burnt.com:443"
+  },
+  "timestamp": 1704931200000
+}
+```
+
+---
+
+#### GET /api/activity
+
+Transaction history for the marketplace.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | number | 50 | Max results (1-100) |
+| `offset` | number | 0 | Pagination offset |
+| `source` | string | - | Force `rpc` data source |
+| `assetContract` | string | config value | Filter by asset contract |
+
+**Response:**
+
+```json
+{
+  "data": [
+    {
+      "id": "abc123",
+      "type": "buy",
+      "tokenId": "nft-001",
+      "from": "xion1seller...",
+      "to": "xion1buyer...",
+      "price": "10000000",
+      "denom": "uxion",
+      "timestamp": 1704931200000,
+      "txHash": "ABC123...",
+      "blockHeight": 12345678
+    }
+  ],
+  "source": "indexer",
+  "timestamp": 1704931200000
+}
+```
+
+**Activity Types:** `mint`, `list`, `delist`, `buy`, `offer`, `transfer`, `accept_offer`, `reject_offer`, `cancel_offer`, `price_update`, `admin`
+
+---
+
+#### GET /api/listings
+
+All active marketplace listings.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `source` | string | - | Force `rpc` data source |
+
+**Response:**
+
+```json
+{
+  "data": [
+    {
+      "tokenId": "nft-001",
+      "seller": "xion1seller...",
+      "price": "10000000",
+      "denom": "uxion",
+      "listedAt": 1704931200000,
+      "txHash": "ABC123..."
+    }
+  ],
+  "source": "indexer",
+  "timestamp": 1704931200000
+}
+```
+
+---
+
+#### GET /api/nfts
+
+All NFTs with their listing status.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | number | 100 | Max results (1-500) |
+| `offset` | number | 0 | Pagination offset |
+| `source` | string | - | Force `rpc` data source |
+| `assetContract` | string | config value | Filter by asset contract |
+
+**Response:**
+
+```json
+{
+  "data": [
+    {
+      "tokenId": "nft-001",
+      "name": "My NFT",
+      "description": "A unique digital collectible",
+      "image": "ipfs://...",
+      "owner": "xion1owner...",
+      "isListed": true,
+      "price": "10000000",
+      "denom": "uxion",
+      "listedAt": 1704931200000
+    }
+  ],
+  "source": "indexer",
+  "timestamp": 1704931200000
+}
+```
+
+---
+
+#### GET /api/nft/:tokenId
+
+Details for a specific NFT.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `tokenId` | string | The NFT token ID |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `source` | string | - | Force `rpc` data source |
+
+**Response:**
+
+```json
+{
+  "data": {
+    "tokenId": "nft-001",
+    "name": "My NFT",
+    "description": "A unique digital collectible",
+    "image": "ipfs://...",
+    "owner": "xion1owner...",
+    "tokenUri": "ipfs://metadata...",
+    "mintedAt": 1704931200000,
+    "mintTxHash": "ABC123..."
+  },
+  "source": "indexer",
+  "timestamp": 1704931200000
+}
+```
+
+**Error Response (404):**
+
+```json
+{
+  "error": "NFT not found",
+  "tokenId": "nft-001"
+}
+```
+
+---
+
+#### GET /api/offers/:tokenId
+
+Offers for a specific token.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `tokenId` | string | The NFT token ID |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `source` | string | - | Force `rpc` data source |
+
+**Response:**
+
+```json
+{
+  "data": [
+    {
+      "offerId": "offer-001",
+      "tokenId": "nft-001",
+      "bidder": "xion1bidder...",
+      "price": "15000000",
+      "denom": "uxion",
+      "createdAt": 1704931200000,
+      "txHash": "ABC123..."
+    }
+  ],
+  "source": "indexer",
+  "timestamp": 1704931200000
+}
+```
+
+---
+
+#### GET /api/user/:address/listings
+
+Active listings for a specific user.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `address` | string | User's XION address |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `source` | string | - | Force `rpc` data source |
+| `assetContract` | string | config value | Filter by asset contract |
+
+**Response:**
+
+```json
+{
+  "data": [
+    {
+      "tokenId": "nft-001",
+      "seller": "xion1seller...",
+      "price": "10000000",
+      "denom": "uxion",
+      "listedAt": 1704931200000,
+      "name": "My NFT",
+      "image": "ipfs://..."
+    }
+  ],
+  "source": "indexer",
+  "timestamp": 1704931200000
+}
+```
+
+---
+
+#### GET /api/user/:address/nfts
+
+NFTs owned by a specific user.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `address` | string | User's XION address |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `source` | string | - | Force `rpc` data source |
+| `assetContract` | string | config value | Filter by asset contract |
+
+**Response:**
+
+```json
+{
+  "data": [
+    {
+      "tokenId": "nft-001",
+      "name": "My NFT",
+      "description": "A unique digital collectible",
+      "image": "ipfs://...",
+      "owner": "xion1owner..."
+    }
+  ],
+  "source": "indexer",
+  "timestamp": 1704931200000
+}
+```
 
 ---
 
@@ -146,6 +540,7 @@ For more details, see the [XION Treasury Documentation](https://docs.burnt.com/x
 | Offers | `http://localhost:5173/offers` | Manage offers |
 | Admin Panel | `http://localhost:5173/admin` | Contract deployment & management (Admin only) |
 | Activity | `http://localhost:5173/activity` | Transaction history |
+| Settings | `http://localhost:5173/settings` | Configure contract addresses and network settings |
 | Developer Console | `http://localhost:5173/console` | Contract deployment, advanced queries |
 
 ### Role System
@@ -568,14 +963,23 @@ Offers can be made on unlisted NFTs through the Developer Console or programmati
 
 ## Activity & History
 
-The Activity page (`/activity`) shows your transaction history.
+The Activity page (`/activity`) shows marketplace transaction history fetched from the backend API.
 
-> **Note:** Activity history is stored locally in your browser (localStorage). NFT listings and ownership are queried directly from the blockchain, ensuring all users see the same on-chain data.
+### Data Sources
+
+Activity data is retrieved via the `/api/activity` endpoint, which supports two data sources:
+
+| Source | Description |
+|--------|-------------|
+| **Indexer** | PostgreSQL database with complete historical data (when configured) |
+| **RPC** | Direct blockchain queries (limited to recent transactions) |
+
+The backend automatically falls back to RPC queries when the indexer is unavailable.
 
 ### Viewing Activity
 
 1. Navigate to `http://localhost:5173/activity`
-2. All recorded transactions are displayed
+2. All marketplace transactions are displayed chronologically
 
 ### Activity Types
 
@@ -586,8 +990,11 @@ The Activity page (`/activity`) shows your transaction history.
 | Delist | NFT was removed from sale |
 | Buy | NFT was purchased |
 | Offer | Offer was made |
+| Transfer | NFT was transferred |
 | Accept Offer | Offer was accepted |
 | Reject Offer | Offer was rejected |
+| Cancel Offer | Offer was cancelled |
+| Price Update | Listing price was changed |
 | Admin | Administrative action |
 
 ### Filtering Activity
@@ -598,12 +1005,6 @@ Use the tabs to filter by activity type (All, Mint, List, Buy, etc.)
 
 - Each activity shows the token ID, addresses involved, and price
 - Click **"View Tx"** to see the transaction on the XION explorer
-
-### Clearing History
-
-Click **"Clear History"** to remove all local activity records.
-
-> **Note:** Activity is stored in localStorage and persists only in your browser.
 
 ---
 
@@ -789,10 +1190,12 @@ Each submit logs the tx hash/result in the Execution Log for quick debugging.
 ## Notes
 
 - The UI only targets the marketplace requirements for the asset contract (minting, approvals, plugin + listing extensions). Generic CW721 actions outside this scope were intentionally omitted.
-- CosmJS runs fully client-side. Provide the RPC URL of your Xion node; REST is not needed.
+- CosmJS runs fully client-side for blockchain transactions. Provide the RPC URL of your XION node; REST is not needed.
+- The Express backend provides an optional data layer with PostgreSQL indexer support. Without `INDEXER_DB_URL` configured, the server falls back to RPC queries.
+- To run your own indexer, see the [daodao/argus](https://github.com/DA0-DA0/argus) project for PostgreSQL indexer setup.
 - Plugin helpers support all variants defined in `contracts/asset/src/plugin.rs` (exact/min price, proof, not-before/after, timelock, royalty, marketplace/currency allowlists).
 - Sale approvals in the marketplace use the dedicated forms (Approve/Reject).
 
 ---
 
-*Last updated: December 2025*
+*Last updated: January 2026*

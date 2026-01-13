@@ -22,6 +22,15 @@ router.get('/', async (req: Request, res: Response) => {
     if (!forceRpc && isIndexerAvailable()) {
       data = await getAllNFTsFromIndexer(limit, offset);
       source = 'indexer';
+
+      // Fallback to RPC if indexer returned empty (e.g., indexer is behind)
+      if (data.length === 0) {
+        const rpcData = await getAllNFTsFromRpc(limit, offset, assetContract);
+        if (rpcData.length > 0) {
+          data = rpcData;
+          source = 'rpc';
+        }
+      }
     } else {
       data = await getAllNFTsFromRpc(limit, offset, assetContract);
       source = 'rpc';

@@ -25,6 +25,15 @@ router.get('/:tokenId', async (req: Request, res: Response) => {
     if (!forceRpc && isIndexerAvailable()) {
       data = await getNFTFromIndexer(tokenId);
       source = 'indexer';
+
+      // Fallback to RPC if indexer returned null (e.g., indexer is behind)
+      if (!data) {
+        const rpcData = await getNFTFromRpc(tokenId);
+        if (rpcData) {
+          data = rpcData;
+          source = 'rpc';
+        }
+      }
     } else {
       data = await getNFTFromRpc(tokenId);
       source = 'rpc';

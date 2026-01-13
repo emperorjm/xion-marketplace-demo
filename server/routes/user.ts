@@ -26,6 +26,15 @@ router.get('/:address/listings', async (req: Request, res: Response) => {
     if (!forceRpc && isIndexerAvailable()) {
       data = await getUserListingsFromIndexer(address);
       source = 'indexer';
+
+      // Fallback to RPC if indexer returned empty (e.g., indexer is behind)
+      if (data.length === 0) {
+        const rpcData = await getUserListingsFromRpc(address, assetContract);
+        if (rpcData.length > 0) {
+          data = rpcData;
+          source = 'rpc';
+        }
+      }
     } else {
       data = await getUserListingsFromRpc(address, assetContract);
       source = 'rpc';
@@ -82,6 +91,15 @@ router.get('/:address/nfts', async (req: Request, res: Response) => {
     if (!forceRpc && isIndexerAvailable()) {
       data = await getUserNFTsFromIndexer(address);
       source = 'indexer';
+
+      // Fallback to RPC if indexer returned empty (e.g., indexer is behind)
+      if (data.length === 0) {
+        const rpcData = await getUserNFTsFromRpc(address, assetContract);
+        if (rpcData.length > 0) {
+          data = rpcData;
+          source = 'rpc';
+        }
+      }
     } else {
       data = await getUserNFTsFromRpc(address, assetContract);
       source = 'rpc';

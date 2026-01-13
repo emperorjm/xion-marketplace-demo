@@ -17,6 +17,15 @@ router.get('/', async (req: Request, res: Response) => {
     if (!forceRpc && isIndexerAvailable()) {
       data = await getListingsFromIndexer();
       source = 'indexer';
+
+      // Fallback to RPC if indexer returned empty (e.g., indexer is behind)
+      if (data.length === 0) {
+        const rpcData = await getListingsFromRpc();
+        if (rpcData.length > 0) {
+          data = rpcData;
+          source = 'rpc';
+        }
+      }
     } else {
       data = await getListingsFromRpc();
       source = 'rpc';
