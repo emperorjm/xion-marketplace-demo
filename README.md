@@ -5,21 +5,22 @@ A full-featured NFT marketplace built on the XION blockchain with a React + Vite
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Getting Started](#getting-started)
-3. [Deployment](#deployment)
-4. [Configuration](#configuration)
-5. [Backend Architecture](#backend-architecture)
-6. [API Reference](#api-reference)
-7. [Abstraxion Setup](#abstraxion-setup)
-8. [Quick Reference](#quick-reference)
-9. [Admin Guide](#admin-guide)
-10. [Seller Guide](#seller-guide)
-11. [Buyer Guide](#buyer-guide)
-12. [Activity & History](#activity--history)
-13. [Developer Console Reference](#developer-console-reference)
-14. [Troubleshooting](#troubleshooting)
-15. [Contract Message Examples](#contract-message-examples)
-16. [Notes](#notes)
+2. [Integration Guide](#integration-guide)
+3. [Getting Started](#getting-started)
+4. [Deployment](#deployment)
+5. [Configuration](#configuration)
+6. [Backend Architecture](#backend-architecture)
+7. [API Reference](#api-reference)
+8. [Abstraxion Setup](#abstraxion-setup)
+9. [Quick Reference](#quick-reference)
+10. [Admin Guide](#admin-guide)
+11. [Seller Guide](#seller-guide)
+12. [Buyer Guide](#buyer-guide)
+13. [Activity & History](#activity--history)
+14. [Developer Console Reference](#developer-console-reference)
+15. [Troubleshooting](#troubleshooting)
+16. [Contract Message Examples](#contract-message-examples)
+17. [Notes](#notes)
 
 ---
 
@@ -38,6 +39,106 @@ All blockchain interactions happen in the browser via CosmJS. The optional Expre
 1. Visit the XION Testnet Faucet: https://faucet.xion.burnt.com
 2. Enter your XION wallet address
 3. Request tokens (you'll receive `uxion` - micro XION)
+
+---
+
+## Integration Guide
+
+Quick reference for teams integrating with the XION Marketplace demo.
+
+### Architecture Summary
+
+| Layer | Technology | Purpose |
+|-------|------------|---------|
+| Frontend | React + Vite + TypeScript | User interface |
+| Backend | Express.js API | Data aggregation layer |
+| Data (Primary) | PostgreSQL Indexer | Fast queries, historical data |
+| Data (Fallback) | XION RPC (CosmJS) | Direct blockchain queries |
+| Wallet | Abstraxion | Gasless transactions via meta accounts |
+
+### Contract Integration
+
+The app uses two CosmWasm contracts:
+
+| Contract | Purpose | Key Operations |
+|----------|---------|----------------|
+| **Asset (CW721)** | NFT collection | `mint`, `transfer_nft`, `approve`, `update_extension` (list/delist/buy) |
+| **Marketplace** | Trading layer | `create_listing`, `buy`, `create_offer`, `accept_offer` |
+
+### Configuration Options
+
+Teams can configure contract addresses via:
+
+1. **Settings UI** (`/settings`) - Runtime configuration, persisted to localStorage
+2. **Environment Variables** - Default values in `.env` file
+
+```env
+# Contract Addresses
+VITE_ASSET_CONTRACT=xion1...
+VITE_MARKETPLACE_CONTRACT=xion1...
+VITE_TREASURY_CONTRACT=xion1...
+
+# Indexer (optional - falls back to RPC)
+INDEXER_DB_URL=postgres://user:pass@host:port/database
+```
+
+### API Endpoints Summary
+
+All endpoints return `{ data, source: "indexer" | "rpc", timestamp }`.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/health` | GET | Health check and config status |
+| `/api/nfts` | GET | All NFTs with listing status |
+| `/api/nft/:tokenId` | GET | Single NFT details |
+| `/api/listings` | GET | Active marketplace listings |
+| `/api/offers/:tokenId` | GET | Offers on a specific token |
+| `/api/user/:address/nfts` | GET | NFTs owned by address |
+| `/api/user/:address/listings` | GET | Active listings by address |
+| `/api/activity` | GET | Transaction history |
+
+Query parameter `?source=rpc` forces RPC fallback on any endpoint.
+
+### Quick Start for Teams
+
+```bash
+# 1. Clone and install
+git clone <repo>
+cd xion-marketplace-demo
+npm install
+
+# 2. Configure environment
+cp .env.example .env
+# Edit .env with your contract addresses and indexer URL
+
+# 3. Start development servers
+npm run dev        # Both frontend (5173) and backend (3001)
+
+# 4. Or run separately
+npm run dev:client # Frontend only
+npm run dev:server # Backend only
+```
+
+### Data Source Indicator
+
+The UI displays data source via:
+- **"(from indexer)"** - Data from PostgreSQL indexer
+- **"(from rpc)"** - Data from direct blockchain queries
+- **"IDX" badge** - Visual indicator on NFT cards
+
+### Indexer Events
+
+The backend queries these event types from the `Extractions` table:
+
+| Event Name | Description |
+|------------|-------------|
+| `asset/mint` | NFT minted |
+| `asset/list` | NFT listed for sale |
+| `asset/delist` | NFT delisted |
+| `asset/buy` | NFT purchased |
+| `asset/transfer` | NFT transferred |
+| `asset/config` | Contract configuration |
+| `marketplace/*` | Marketplace-specific events |
 
 ---
 
